@@ -31,6 +31,19 @@ export class DeviceRepository {
         });
     }
 
+    async unrevoke(id: number) {
+        return this.prisma.trustedDevice.update({
+            where: { id },
+            data: { isActive: true, revokedAt: null, revokedBy: null },
+        });
+    }
+
+    async findActiveByEmployee(employeeId: number) {
+        return this.prisma.trustedDevice.findFirst({
+            where: { employeeId, isActive: true },
+        });
+    }
+
     async findByEmployee(employeeId: number) {
         return this.prisma.trustedDevice.findMany({
             where: { employeeId },

@@ -14,7 +14,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { UserService } from './user.service';
-import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
+import { CreateUserDto, UpdateProfileDto, UpdateUserDto } from './dto/user.dto';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { ApiResponse } from '../../common/response/api-response';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -62,6 +62,18 @@ export class UserController {
     const user = await this.userService.getUserById(id);
     const { password, refreshToken, ...safe } = user;
     return ApiResponse.ok(safe);
+  }
+
+  @Patch('me')
+  @Roles(Role.admin, Role.user)
+  @ApiOperation({ summary: 'Update own profile (all users)' })
+  async updateMe(
+    @Body() dto: UpdateProfileDto,
+    @CurrentUser('id') userId: number,
+  ) {
+    const user = await this.userService.updateProfile(userId, dto);
+    const { password, refreshToken, ...safe } = user;
+    return ApiResponse.ok(safe, 'Profile updated successfully');
   }
 
   @Patch(':id')

@@ -87,4 +87,11 @@ export class EmployeeController {
     async revokeDevice(@Param('deviceId', ParseIntPipe) deviceId: number, @CurrentUser('id') adminId: number) {
         return ApiResponse.ok(await this.deviceService.revokeDevice(deviceId, adminId), 'Device revoked');
     }
+
+    @Patch('devices/:deviceId/unrevoke')
+    @Roles(Role.admin)
+    @ApiOperation({ summary: 'Restore a revoked device (Admin)' })
+    async unrevokeDevice(@Param('deviceId', ParseIntPipe) deviceId: number) {
+        return ApiResponse.ok(await this.deviceService.unrevokeDevice(deviceId), 'Device restored');
+    }
 }

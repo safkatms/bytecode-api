@@ -43,6 +43,9 @@ export class CreateUserDto {
 // Password cannot be patched — use change-password endpoint
 export class UpdateUserDto extends PartialType(CreateUserDto) { }
 
+// Users updating their own profile cannot change role
+export class UpdateProfileDto extends OmitType(UpdateUserDto, ['role'] as const) { }
+
 export class ChangePasswordDto {
   @ApiProperty()
   @IsNotEmpty()

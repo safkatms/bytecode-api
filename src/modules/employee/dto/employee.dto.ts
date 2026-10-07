@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { IsDateString, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export class CreateEmployeeDto {
@@ -30,10 +31,12 @@ export class CreateEmployeeDto {
     @IsString()
     employeeCode: string;
 
-    @ApiPropertyOptional({ example: 'Engineering' })
+    @ApiPropertyOptional({ example: 1 })
     @IsOptional()
-    @IsString()
-    department?: string;
+    @Type(() => Number)
+    @IsInt()
+    @IsPositive()
+    departmentId?: number;
 
     @ApiPropertyOptional({ example: 'Software Engineer' })
     @IsOptional()
@@ -49,8 +52,10 @@ export class CreateEmployeeDto {
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {}
 
 export class EmployeeFilterDto extends PaginationDto {
-    @ApiPropertyOptional()
+    @ApiPropertyOptional({ example: 1 })
     @IsOptional()
-    @IsString()
-    department?: string;
+    @Type(() => Number)
+    @IsInt()
+    @IsPositive()
+    departmentId?: number;
 }

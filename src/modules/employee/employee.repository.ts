@@ -19,16 +19,24 @@ export class EmployeeRepository extends BaseRepository<
         return { deletedAt: null, recordStatus: 'active' };
     }
 
+    private get includeRelations() {
+        return {
+            user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+            department: { select: { id: true, name: true } },
+        } as const;
+    }
+
     async findById(id: number) {
         return this.prisma.employee.findFirst({
             where: { id, ...this.active },
-            include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } } },
+            include: this.includeRelations,
         });
     }
 
     async findByUserId(userId: number) {
         return this.prisma.employee.findFirst({
             where: { userId, ...this.active },
+            include: this.includeRelations,
         });
     }
 
@@ -37,10 +45,11 @@ export class EmployeeRepository extends BaseRepository<
     }
 
     async search(filter: EmployeeFilterDto): Promise<PaginatedResponse<any>> {
-        const { page = 1, limit = 10, skip, search, sortBy = 'createdAt', order = 'DESC' } = filter;
+        const { page = 1, limit = 10, skip, search, sortBy = 'createdAt', order = 'DESC', departmentId } = filter;
 
         const where: Prisma.EmployeeWhereInput = {
             ...this.active,
+            ...(departmentId && { departmentId }),
             ...(search && {
                 OR: [
                     { employeeCode: { contains: search, mode: 'insensitive' } },
@@ -55,7 +64,7 @@ export class EmployeeRepository extends BaseRepository<
             this.prisma.employee.findMany({
                 where, skip, take: limit,
                 orderBy: { [sortBy]: order.toLowerCase() },
-                include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } } },
+                include: this.includeRelations,
             }),
             this.prisma.employee.count({ where }),
         ]);

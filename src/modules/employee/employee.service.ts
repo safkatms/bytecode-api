@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { UserService } from '../user/user.service';
+import { DepartmentService } from '../department/department.service';
 import { EmployeeRepository } from './employee.repository';
 import { CreateEmployeeDto, EmployeeFilterDto, UpdateEmployeeDto } from './dto/employee.dto';
 import { ConflictException, NotFoundException } from '../../common/exceptions/app.exception';
@@ -12,6 +13,7 @@ export class EmployeeService {
         private readonly prisma: PrismaService,
         private readonly employeeRepo: EmployeeRepository,
         private readonly userService: UserService,
+        private readonly departmentService: DepartmentService,
     ) { }
 
     /**
@@ -26,6 +28,8 @@ export class EmployeeService {
         ]);
         if (emailTaken) throw new ConflictException('A user with this email already exists');
         if (codeTaken) throw new ConflictException('Employee code already in use');
+
+        if (dto.departmentId) await this.departmentService.findById(dto.departmentId);
 
         const plainPassword = this.userService.generateOtp();
         const hashedPassword = await bcrypt.hash(plainPassword, 12);
@@ -50,6 +54,7 @@ export class EmployeeService {
                 data: {
                     userId: user.id,
                     employeeCode: dto.employeeCode,
+                    departmentId: dto.departmentId ?? null,
                     designation: dto.designation,
                     joiningDate: new Date(dto.joiningDate),
                     createdBy: adminId,
@@ -90,6 +95,7 @@ export class EmployeeService {
             const existing = await this.employeeRepo.findByCode(dto.employeeCode);
             if (existing && existing.id !== id) throw new ConflictException('Employee code already in use');
         }
+        if (dto.departmentId) await this.departmentService.findById(dto.departmentId);
         return this.employeeRepo.update(id, {
             ...dto,
             ...(dto.joiningDate ? { joiningDate: new Date(dto.joiningDate) } : {}),
@@ -105,6 +111,9 @@ export class EmployeeService {
 
     async toggleActive(id: number, adminId: number) {
         const emp = await this.findById(id);
+        const user = await this.userService.findById(emp.userId);
+        if (!user) throw new NotFoundException('Associated user account');
+        await this.userService.update(user.id, { isActive: !user.isActive });
         return this.employeeRepo.update(id, { isActive: !emp.isActive, updatedBy: adminId });
     }
 

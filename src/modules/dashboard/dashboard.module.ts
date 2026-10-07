@@ -3,9 +3,10 @@ import { DashboardAdminController } from './controllers/dashboard-admin.controll
 import { DashboardEmployeeController } from './controllers/dashboard-employee.controller';
 import { DashboardService } from './dashboard.service';
 import { AttendanceModule } from '../attendance/attendance.module';
+import { EmployeeModule } from '../employee/employee.module';
 
 @Module({
-    imports: [AttendanceModule],          // gives us EmployeeService (already exported)
+    imports: [AttendanceModule, EmployeeModule],
     controllers: [DashboardAdminController, DashboardEmployeeController],
     providers: [DashboardService],
 })

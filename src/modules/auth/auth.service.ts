@@ -5,6 +5,8 @@ import { User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { UserService } from '../user/user.service';
+import { EmployeeService } from '../employee/employee.service';
+import { DeviceService } from '../device/device.service';
 import { LoginDto } from './dto/auth.dto';
 import {
   UnauthorizedException,
@@ -16,6 +18,8 @@ import {
 export class AuthService {
   constructor(
     private readonly userService: UserService,
+    private readonly employeeService: EmployeeService,
+    private readonly deviceService: DeviceService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) { }
@@ -28,6 +32,14 @@ export class AuthService {
 
     const isMatch = await bcrypt.compare(dto.password, user.password);
     if (!isMatch) throw new UnauthorizedException('Invalid credentials');
+
+    // Device validation for employees — skipped for admins (no employee profile)
+    if (dto.deviceId) {
+      const employee = await this.employeeService.findByUserId(user.id).catch(() => null);
+      if (employee) {
+        await this.deviceService.validateAndRegister(employee.id, dto.deviceId, dto.deviceName ?? null);
+      }
+    }
 
     const tokens = this.generateTokens(user);
 

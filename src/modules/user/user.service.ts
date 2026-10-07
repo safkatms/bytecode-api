@@ -3,7 +3,7 @@ import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { UserRepository } from './user.repository';
-import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
+import { CreateUserDto, UpdateProfileDto, UpdateUserDto } from './dto/user.dto';
 import { BaseService } from '../../common/services/base.service';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { PaginatedResponse } from '../../common/response/paginated-response';
@@ -97,6 +97,19 @@ export class UserService extends BaseService<
 
   async removeUser(id: number): Promise<User> {
     return this.remove(id);
+  }
+
+  async updateProfile(userId: number, dto: UpdateProfileDto): Promise<User> {
+    await this.findById(userId);
+
+    if (dto.email) {
+      const existing = await this.userRepository.findByEmail(dto.email);
+      if (existing && existing.id !== userId) {
+        throw new ConflictException('Email is already in use by another user');
+      }
+    }
+
+    return this.userRepository.update(userId, { ...dto, updatedBy: userId });
   }
 
   async findByEmail(email: string): Promise<User | null> {
