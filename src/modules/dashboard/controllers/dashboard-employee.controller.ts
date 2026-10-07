@@ -1,0 +1,34 @@
+import { Controller, Get, Query, ParseIntPipe, DefaultValuePipe } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { DashboardService } from '../dashboard.service';
+import { ApiResponse } from '../../../common/response/api-response';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { EmployeeService } from '@modules/employee/employee.service';
+
+@ApiTags('My Dashboard')
+@ApiBearerAuth()
+@Controller('dashboard/me')
+export class DashboardEmployeeController {
+    constructor(
+        private readonly dashboardService: DashboardService,
+        private readonly employeeService: EmployeeService,
+    ) { }
+
+    @Get('overview')
+    @ApiOperation({ summary: "Today's status + this month's summary for the logged-in employee" })
+    async overview(@CurrentUser('id') userId: number) {
+        const emp = await this.employeeService.findByUserId(userId);
+        return ApiResponse.ok(await this.dashboardService.getEmployeeOverview(emp.id));
+    }
+
+    @Get('attendance-trend')
+    @ApiOperation({ summary: 'My attendance trend for the last N months' })
+    @ApiQuery({ name: 'months', required: false, example: 6 })
+    async attendanceTrend(
+        @CurrentUser('id') userId: number,
+        @Query('months', new DefaultValuePipe(6), ParseIntPipe) months: number,
+    ) {
+        const emp = await this.employeeService.findByUserId(userId);
+        return ApiResponse.ok(await this.dashboardService.getEmployeeAttendanceTrend(emp.id, months));
+    }
+}

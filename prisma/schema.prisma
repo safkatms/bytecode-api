@@ -1,0 +1,324 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────
+
+enum Role {
+  admin
+  user
+}
+
+enum TxnType {
+  Income
+  Expense
+  Transfer
+}
+
+enum LoanDirection {
+  Gave
+  Received
+}
+
+enum LoanStatus {
+  Outstanding
+  PartiallyPaid
+  Settled
+  WrittenOff
+}
+
+enum ImportStatus {
+  pending
+  processing
+  done
+  failed
+  cancelled
+}
+
+enum AuditAction {
+  create
+  update
+  delete
+  restore
+  login
+  logout
+  impersonate
+  export
+  import
+}
+
+enum AccountType {
+  bank
+  mobile_banking
+  cash
+  card
+  investment
+  other
+}
+
+enum RecordStatus {
+  active
+  deleted
+}
+
+// ─── User / Auth ──────────────────────────────────────────────
+
+model User {
+  id                  Int       @id @default(autoincrement())
+  email               String    @unique @db.VarChar(255)
+  password            String
+  firstName           String?   @map("first_name")  @db.VarChar(100)
+  lastName            String?   @map("last_name")   @db.VarChar(100)
+  phone               String?   @db.VarChar(30)
+  avatarUrl           String?   @map("avatar_url")
+  role                Role      @default(user)
+  isActive            Boolean   @default(true)      @map("is_active")
+  refreshToken        String?   @map("refresh_token")
+
+  // security
+  lastLoginAt         DateTime? @map("last_login_at")
+  lastLoginIp         String?   @map("last_login_ip")
+  failedLoginAttempts Int       @default(0)         @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  passwordChangedAt   DateTime? @map("password_changed_at")
+  mustChangePassword  Boolean   @default(false)     @map("must_change_password")
+
+  // preferences
+  timezone            String    @default("Asia/Dhaka")
+  locale              String    @default("en-BD")
+  currency            String    @default("BDT")
+  dateFormat          String    @default("dd/MM/yyyy") @map("date_format")
+
+  //password reset
+  passwordResetToken     String?   @map("password_reset_token")
+  passwordResetExpiresAt DateTime? @map("password_reset_expires_at")
+  
+  // audit trail
+  createdAt           DateTime  @default(now())     @map("created_at")
+  createdBy           Int?      @map("created_by")
+  updatedAt           DateTime  @updatedAt          @map("updated_at")
+  updatedBy           Int?      @map("updated_by")
+  deletedAt           DateTime? @map("deleted_at")
+  deletedBy           Int?      @map("deleted_by")
+  recordStatus        RecordStatus @default(active) @map("record_status")
+  version             Int       @default(1)
+
+  // relations
+  employee        Employee?
+  sessions            UserSession[]
+  auditLogs        AuditLog[]   @relation("ActorLogs")
+  @@map("users")
+}
+
+// ─── User Sessions ────────────────────────────────────────────
+
+model UserSession {
+  id                Int       @id @default(autoincrement())
+  userId            Int       @map("user_id")
+  tokenHash         String    @unique @map("token_hash")
+  refreshTokenHash  String?   @map("refresh_token_hash")
+  deviceInfo        Json?     @map("device_info")
+  ipAddress         String?   @map("ip_address")
+  expiresAt         DateTime  @map("expires_at")
+  revokedAt         DateTime? @map("revoked_at")
+  revokedBy         Int?      @map("revoked_by")
+
+  createdAt         DateTime  @default(now()) @map("created_at")
+  lastActiveAt      DateTime  @default(now()) @map("last_active_at")
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+// ─── Attendance Enums ─────────────────────────────────────────
+
+enum AttendanceStatus {
+  present
+  absent
+  late
+  half_day
+  on_leave
+  holiday
+  weekend
+}
+
+// ─── Department ───────────────────────────────────────────────
+
+model Department {
+  id           Int          @id @default(autoincrement())
+  name         String       @unique @db.VarChar(100)
+  description  String?      @db.VarChar(255)
+  isActive     Boolean      @default(true) @map("is_active")
+
+  // audit trail
+  createdAt    DateTime     @default(now()) @map("created_at")
+  createdBy    Int          @map("created_by")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  updatedBy    Int          @map("updated_by")
+  deletedAt    DateTime?    @map("deleted_at")
+  deletedBy    Int?         @map("deleted_by")
+  recordStatus RecordStatus @default(active) @map("record_status")
+  version      Int          @default(1)
+
+  employees    Employee[]
+
+  @@map("departments")
+}
+
+// ─── Employee ─────────────────────────────────────────────────
+
+model Employee {
+  id              Int          @id @default(autoincrement())
+  userId          Int          @unique @map("user_id")
+  employeeCode    String       @unique @map("employee_code") @db.VarChar(30)
+  departmentId    Int?         @map("department_id")
+  designation     String?      @db.VarChar(100)
+  joiningDate     DateTime     @map("joining_date") @db.Date
+  isActive        Boolean      @default(true) @map("is_active")
+
+  // audit trail
+  createdAt       DateTime     @default(now()) @map("created_at")
+  createdBy       Int          @map("created_by")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  updatedBy       Int          @map("updated_by")
+  deletedAt       DateTime?    @map("deleted_at")
+  deletedBy       Int?         @map("deleted_by")
+  recordStatus    RecordStatus @default(active) @map("record_status")
+  version         Int          @default(1)
+
+  user            User         @relation(fields: [userId], references: [id])
+  department      Department?  @relation(fields: [departmentId], references: [id])
+  attendances     Attendance[]
+  trustedDevices  TrustedDevice[]
+
+  @@index([departmentId])
+  @@map("employees")
+}
+
+// ─── Trusted Devices ──────────────────────────────────────────
+
+model TrustedDevice {
+  id              Int          @id @default(autoincrement())
+  employeeId      Int          @map("employee_id")
+  deviceId        String       @map("device_id") @db.VarChar(255)  // sent by app
+  deviceName      String?      @map("device_name") @db.VarChar(255) // user-agent / model
+  isActive        Boolean      @default(true) @map("is_active")
+  firstSeenAt     DateTime     @default(now()) @map("first_seen_at")
+  lastSeenAt      DateTime     @default(now()) @map("last_seen_at")
+  revokedAt       DateTime?    @map("revoked_at")
+  revokedBy       Int?         @map("revoked_by")
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+  createdBy       Int          @map("created_by")
+
+  employee        Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, deviceId])
+  @@index([employeeId])
+  @@map("trusted_devices")
+}
+
+// ─── Office Locations (admin-managed) ─────────────────────────
+
+model OfficeLocation {
+  id              Int          @id @default(autoincrement())
+  name            String       @db.VarChar(100)
+  latitude        Decimal      @db.Decimal(10, 7)
+  longitude       Decimal      @db.Decimal(10, 7)
+  radiusMeters    Int          @default(100) @map("radius_meters")
+  isActive        Boolean      @default(true) @map("is_active")
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+  createdBy       Int          @map("created_by")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+  updatedBy       Int          @map("updated_by")
+  deletedAt       DateTime?    @map("deleted_at")
+  deletedBy       Int?         @map("deleted_by")
+  recordStatus    RecordStatus @default(active) @map("record_status")
+
+  @@map("office_locations")
+}
+
+// ─── Attendance ───────────────────────────────────────────────
+
+model Attendance {
+  id              Int              @id @default(autoincrement())
+  employeeId      Int              @map("employee_id")
+  attendanceDate  DateTime         @map("attendance_date") @db.Date
+  status          AttendanceStatus @default(present)
+  checkInTime     DateTime?        @map("check_in_time")
+  checkOutTime    DateTime?        @map("check_out_time")
+  workHours       Decimal?         @map("work_hours") @db.Decimal(5, 2)
+  lateMinutes     Int              @default(0) @map("late_minutes")
+
+  // location snapshot at check-in
+  checkInLat      Decimal?         @map("check_in_lat") @db.Decimal(10, 7)
+  checkInLng      Decimal?         @map("check_in_lng") @db.Decimal(10, 7)
+  checkOutLat     Decimal?         @map("check_out_lat") @db.Decimal(10, 7)
+  checkOutLng     Decimal?         @map("check_out_lng") @db.Decimal(10, 7)
+
+  deviceId        String?          @map("device_id") @db.VarChar(255)
+  isManual        Boolean          @default(false) @map("is_manual") // admin override
+  note            String?
+
+  // audit trail
+  createdAt       DateTime         @default(now()) @map("created_at")
+  createdBy       Int              @map("created_by")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  updatedBy       Int              @map("updated_by")
+  deletedAt       DateTime?        @map("deleted_at")
+  deletedBy       Int?             @map("deleted_by")
+  recordStatus    RecordStatus     @default(active) @map("record_status")
+  version         Int              @default(1)
+
+  employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, attendanceDate])
+  @@index([attendanceDate])
+  @@index([employeeId, attendanceDate(sort: Desc)])
+  @@map("attendances")
+}
+
+// ─── Audit Logs ───────────────────────────────────────────────
+
+model AuditLog {
+  id               Int         @id @default(autoincrement())
+  actorId          Int         @map("actor_id")
+  actorRole        Role        @map("actor_role")
+  impersonatingId  Int?        @map("impersonating_id")
+
+  action           AuditAction
+  targetType       String      @map("target_type") @db.VarChar(50)
+  targetId         Int?        @map("target_id")
+  targetLabel      String?     @map("target_label")
+
+  diff             Json?
+  requestId        String?     @map("request_id")  @db.VarChar(100)
+  endpoint         String?     @db.VarChar(255)
+  httpMethod       String?     @map("http_method") @db.VarChar(10)
+  ipAddress        String?     @map("ip_address")
+  userAgent        String?     @map("user_agent")
+
+  success          Boolean     @default(true)
+  errorCode        String?     @map("error_code")  @db.VarChar(50)
+  errorMessage     String?     @map("error_message")
+
+  occurredAt       DateTime    @default(now()) @map("occurred_at")
+  // append-only — no updatedAt / deletedAt
+
+  // relations
+  actor            User        @relation("ActorLogs", fields: [actorId], references: [id])
+
+  @@index([actorId,    occurredAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
