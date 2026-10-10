@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString } from 'class-validator';
+import { ArrayMaxSize, ArrayUnique, IsArray, IsDateString, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export class CreateEmployeeDto {
@@ -47,6 +47,19 @@ export class CreateEmployeeDto {
     @IsNotEmpty()
     @IsDateString()
     joiningDate: string;
+
+    @ApiPropertyOptional({
+        example: [5, 6],
+        description: 'Weekend day numbers (0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat). Defaults to [5,6].',
+    })
+    @IsOptional()
+    @IsArray()
+    @ArrayMaxSize(7)
+    @ArrayUnique()
+    @IsInt({ each: true })
+    @Min(0, { each: true })
+    @Max(6, { each: true })
+    weekendDays?: number[];
 }
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {}

@@ -16,6 +16,7 @@ import { EmployeeModule } from '@modules/employee/employee.module';
 import { DeviceModule } from '@modules/device/device.module';
 import { OfficeLocationModule } from '@modules/office-location/office-location.module';
 import { DepartmentModule } from '@modules/department/department.module';
+import { TeamModule } from '@modules/team/team.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { DepartmentModule } from '@modules/department/department.module';
     DeviceModule,
     OfficeLocationModule,
     DepartmentModule,
+    TeamModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

@@ -6,74 +6,123 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...');
 
-  const password = await bcrypt.hash('pass123', 10);
-  const adminPassword = await bcrypt.hash('Sakib#44389', 10);
-
   // =========================
-  // ADMIN
+  // ADMIN ACCOUNTS
   // =========================
 
-  const admin = await prisma.user.upsert({
-    where: { email: 'safkatmahmudsakib@gmail.com' },
-    update: {},
-    create: {
+  const admins = [
+    {
       firstName: 'Safkat Mahmud',
       lastName: 'Sakib',
       email: 'safkatmahmudsakib@gmail.com',
-      password: adminPassword,
-      role: Role.admin,
-      isActive: true,
-      createdBy: null,
-      updatedBy: null,
+      password: 'Sakib#44389',
+      employeeCode: 'EMP-001',
+      designation: 'System Administrator',
+      joiningDate: new Date('2024-01-01'),
     },
-  });
+    {
+      firstName: 'Admin',
+      lastName: 'Two',
+      email: 'admin2@example.com',
+      password: 'Admin@12345',
+      employeeCode: 'EMP-003',
+      designation: 'Administrator',
+      joiningDate: new Date('2026-01-01'),
+    },
+  ];
 
-  await prisma.user.update({
-    where: { id: admin.id },
-    data: { updatedBy: admin.id },
-  });
+  const adminUsers = [];
 
-  console.log(`✅ Admin: ${admin.email}`);
+  for (const adminData of admins) {
+    const hashedPassword = await bcrypt.hash(
+      adminData.password,
+      10,
+    );
 
-  // ── Seed admin as employee ────────────────────────────────────
-  const existingEmployee = await prisma.employee.findUnique({
-    where: { userId: admin.id },
-  });
-
-  if (!existingEmployee) {
-    await prisma.employee.create({
-      data: {
-        userId: admin.id,
-        employeeCode: 'EMP-001',
-        designation: 'System Administrator',
-        joiningDate: new Date('2024-01-01'),
+    const admin = await prisma.user.upsert({
+      where: {
+        email: adminData.email,
+      },
+      update: {},
+      create: {
+        firstName: adminData.firstName,
+        lastName: adminData.lastName,
+        email: adminData.email,
+        password: hashedPassword,
+        role: Role.admin,
         isActive: true,
-        createdBy: admin.id,
+        createdBy: null,
+        updatedBy: null,
+      },
+    });
+
+    // Set the admin as their own updater
+    await prisma.user.update({
+      where: {
+        id: admin.id,
+      },
+      data: {
         updatedBy: admin.id,
       },
     });
-    console.log(`✅ Admin employee profile created`);
-  } else {
-    console.log(`⏭️  Admin employee profile already exists`);
+
+    adminUsers.push(admin);
+
+    console.log(`✅ Admin account: ${admin.email}`);
+
+    // Create admin employee profile if it doesn't exist
+    const existingEmployee = await prisma.employee.findUnique({
+      where: {
+        userId: admin.id,
+      },
+    });
+
+    if (!existingEmployee) {
+      await prisma.employee.create({
+        data: {
+          userId: admin.id,
+          employeeCode: adminData.employeeCode,
+          designation: adminData.designation,
+          joiningDate: adminData.joiningDate,
+          isActive: true,
+          createdBy: admin.id,
+          updatedBy: admin.id,
+        },
+      });
+
+      console.log(
+        `✅ Admin employee profile created: ${adminData.employeeCode}`,
+      );
+    } else {
+      console.log(
+        `⏭️ Admin employee profile already exists: ${admin.email}`,
+      );
+    }
   }
 
+  // Use the first admin as the creator of regular users
+  const primaryAdmin = adminUsers[0];
+
   // =========================
-  // USERS
+  // DEFAULT USER PASSWORD
+  // =========================
+
+  const password = await bcrypt.hash('pass123', 10);
+
+  // =========================
+  // REGULAR USERS + EMPLOYEES
   // =========================
 
   const users = [
-    // {
-    //   firstName: 'Ruhi',
-    //   lastName: 'Barua',
-    //   email: 'ruhi.barua89@gmail.com',
-    //   role: Role.user,
-    // },
-    // {
-    //   firstName: 'Faysal',
-    //   lastName: 'Islam',
-    //   email: 'faysalemon509@gmail.com',
-    //   role: Role.user,
-    // },
+    {
+      firstName: 'Faysal',
+      lastName: 'Islam',
+      email: 'faysalemon509@gmail.com',
+      role: Role.user,
+      employeeCode: 'EMP-002',
+      designation: 'Software Support Engineer',
+      joiningDate: new Date('2026-01-01'),
+    },
   ];
 
   for (const userData of users) {
@@ -89,12 +138,41 @@ async function main() {
         password,
         role: userData.role,
         isActive: true,
-        createdBy: admin.id,
-        updatedBy: admin.id,
+        createdBy: primaryAdmin.id,
+        updatedBy: primaryAdmin.id,
       },
     });
 
-    console.log(`✅ User: ${user.email}`);
+    console.log(`✅ User account: ${user.email}`);
+
+    // Create employee profile if it doesn't exist
+    const existingEmployee = await prisma.employee.findUnique({
+      where: {
+        userId: user.id,
+      },
+    });
+
+    if (!existingEmployee) {
+      await prisma.employee.create({
+        data: {
+          userId: user.id,
+          employeeCode: userData.employeeCode,
+          designation: userData.designation,
+          joiningDate: userData.joiningDate,
+          isActive: true,
+          createdBy: primaryAdmin.id,
+          updatedBy: primaryAdmin.id,
+        },
+      });
+
+      console.log(
+        `✅ Employee profile created: ${userData.employeeCode}`,
+      );
+    } else {
+      console.log(
+        `⏭️ Employee profile already exists: ${user.email}`,
+      );
+    }
   }
 
   console.log('🌱 Seeding complete.');
@@ -104,7 +182,7 @@ main()
   .catch((error) => {
     console.error('❌ Seeding failed:');
     console.error(error);
-    process.exit(1);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();

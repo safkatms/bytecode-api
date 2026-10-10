@@ -183,7 +183,9 @@ model Employee {
   departmentId    Int?         @map("department_id")
   designation     String?      @db.VarChar(100)
   joiningDate     DateTime     @map("joining_date") @db.Date
+  teamId          Int?         @map("team_id")
   isActive        Boolean      @default(true) @map("is_active")
+  weekendDays     Int[]        @default([5, 6]) @map("weekend_days") // 0=Sun…6=Sat; default: Fri+Sat
 
   // audit trail
   createdAt       DateTime     @default(now()) @map("created_at")
@@ -197,11 +199,40 @@ model Employee {
 
   user            User         @relation(fields: [userId], references: [id])
   department      Department?  @relation(fields: [departmentId], references: [id])
+  team            Team?        @relation("TeamMembers", fields: [teamId], references: [id])
+  leadingTeams    Team[]       @relation("TeamLeader")
   attendances     Attendance[]
   trustedDevices  TrustedDevice[]
 
   @@index([departmentId])
+  @@index([teamId])
   @@map("employees")
+}
+
+// ─── Team ─────────────────────────────────────────────────────
+
+model Team {
+  id           Int          @id @default(autoincrement())
+  name         String       @unique @db.VarChar(100)
+  description  String?      @db.VarChar(255)
+  leaderId     Int          @map("leader_id")
+  isActive     Boolean      @default(true) @map("is_active")
+
+  // audit trail
+  createdAt    DateTime     @default(now()) @map("created_at")
+  createdBy    Int          @map("created_by")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  updatedBy    Int          @map("updated_by")
+  deletedAt    DateTime?    @map("deleted_at")
+  deletedBy    Int?         @map("deleted_by")
+  recordStatus RecordStatus @default(active) @map("record_status")
+  version      Int          @default(1)
+
+  leader       Employee     @relation("TeamLeader", fields: [leaderId], references: [id])
+  members      Employee[]   @relation("TeamMembers")
+
+  @@index([leaderId])
+  @@map("teams")
 }
 
 // ─── Trusted Devices ──────────────────────────────────────────

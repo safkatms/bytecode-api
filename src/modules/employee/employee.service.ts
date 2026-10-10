@@ -57,6 +57,7 @@ export class EmployeeService {
                     departmentId: dto.departmentId ?? null,
                     designation: dto.designation,
                     joiningDate: new Date(dto.joiningDate),
+                    weekendDays: dto.weekendDays ?? [5, 6],
                     createdBy: adminId,
                     updatedBy: adminId,
                 },
@@ -90,21 +91,40 @@ export class EmployeeService {
     }
 
     async update(id: number, dto: UpdateEmployeeDto, adminId: number) {
-        await this.findById(id);
+        const emp = await this.findById(id);
+
         if (dto.employeeCode) {
             const existing = await this.employeeRepo.findByCode(dto.employeeCode);
             if (existing && existing.id !== id) throw new ConflictException('Employee code already in use');
         }
         if (dto.departmentId) await this.departmentService.findById(dto.departmentId);
+
+        // Update user fields if provided
+        const userFields = ['firstName', 'lastName', 'email', 'phone'] as const;
+        const hasUserUpdate = userFields.some((f) => dto[f] !== undefined);
+
+        if (hasUserUpdate) {
+            if (dto.email) {
+                const existing = await this.prisma.user.findFirst({
+                    where: { email: dto.email, deletedAt: null, id: { not: emp.userId } },
+                });
+                if (existing) throw new ConflictException('Email already in use');
+            }
+            await this.userService.update(emp.userId, {
+                ...(dto.firstName && { firstName: dto.firstName }),
+                ...(dto.lastName && { lastName: dto.lastName }),
+                ...(dto.email && { email: dto.email }),
+                ...(dto.phone && { phone: dto.phone }),
+                updatedBy: adminId,
+            });
+        }
+
         return this.employeeRepo.update(id, {
-            ...dto,
-            ...(dto.joiningDate ? { joiningDate: new Date(dto.joiningDate) } : {}),
-            // user fields (firstName, lastName, email, phone) are not updatable here
-            // use PATCH /users/:id for that
-            firstName: undefined,
-            lastName: undefined,
-            email: undefined,
-            phone: undefined,
+            ...(dto.employeeCode && { employeeCode: dto.employeeCode }),
+            ...(dto.departmentId !== undefined && { departmentId: dto.departmentId }),
+            ...(dto.designation !== undefined && { designation: dto.designation }),
+            ...(dto.joiningDate && { joiningDate: new Date(dto.joiningDate) }),
+            ...(dto.weekendDays !== undefined && { weekendDays: dto.weekendDays }),
             updatedBy: adminId,
         });
     }

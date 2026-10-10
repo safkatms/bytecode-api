@@ -127,16 +127,16 @@ export class AttendanceService {
     async getMyWeeklyTimesheet(userId: number, dto: WeeklyTimesheetDto) {
         const employee = await this.employeeRepo.findByUserId(userId);
         if (!employee) throw new NotFoundException('Employee profile');
-        return this.buildWeeklyTimesheet(employee.id, dto);
+        return this.buildWeeklyTimesheet(employee.id, (employee as any).weekendDays ?? [5, 6], dto);
     }
 
     async adminGetWeeklyTimesheet(employeeId: number, dto: WeeklyTimesheetDto) {
         const employee = await this.employeeRepo.findById(employeeId);
         if (!employee) throw new NotFoundException('Employee');
-        return this.buildWeeklyTimesheet(employeeId, dto);
+        return this.buildWeeklyTimesheet(employeeId, (employee as any).weekendDays ?? [5, 6], dto);
     }
 
-    private async buildWeeklyTimesheet(employeeId: number, dto: WeeklyTimesheetDto) {
+    private async buildWeeklyTimesheet(employeeId: number, weekendDays: number[], dto: WeeklyTimesheetDto) {
         const anchor = dto.date ? new Date(dto.date) : this.todayBd();
         const { weekStart, weekEnd } = this.getWeekRange(anchor);
 
@@ -152,6 +152,8 @@ export class AttendanceService {
             const d = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + i));
             const key = d.toISOString().slice(0, 10);
             const rec = recordMap.get(key) ?? null;
+            const isWeekend = weekendDays.includes(d.getUTCDay());
+            const effectiveStatus = rec?.status ?? (isWeekend ? AttendanceStatus.weekend : null);
 
             totalWorkHours += Number(rec?.workHours ?? 0);
             totalLateMinutes += rec?.lateMinutes ?? 0;
@@ -160,22 +162,26 @@ export class AttendanceService {
                 id: rec?.id ?? null,
                 date: key,
                 day: DAY_NAMES[d.getUTCDay()],
-                status: rec?.status ?? null,
+                isWeekend,
+                status: effectiveStatus,
                 checkInTime: rec?.checkInTime ?? null,
                 checkOutTime: rec?.checkOutTime ?? null,
                 workHours: rec?.workHours ?? null,
                 lateMinutes: rec?.lateMinutes ?? null,
+                isManual: rec?.isManual ?? false,
             });
         }
 
         return {
             weekStart: weekStart.toISOString().slice(0, 10),
             weekEnd: weekEnd.toISOString().slice(0, 10),
+            weekendDays,
             totalWorkHours: Math.round(totalWorkHours * 100) / 100,
             totalLateMinutes,
             presentDays: days.filter((d) => d.status === AttendanceStatus.present).length,
             lateDays: days.filter((d) => d.status === AttendanceStatus.late).length,
-            absentDays: days.filter((d) => !d.status).length,
+            weekendDaysCount: days.filter((d) => d.isWeekend).length,
+            absentDays: days.filter((d) => !d.status || d.status === AttendanceStatus.absent).length,
             totalDays: days.length,
             days,
         };
