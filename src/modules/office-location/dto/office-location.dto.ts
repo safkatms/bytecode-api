@@ -1,4 +1,4 @@
-import { ApiProperty, PartialType } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { IsInt, IsNotEmpty, IsNumber, IsString, Max, Min } from 'class-validator';
 
 export class CreateOfficeLocationDto {
@@ -29,4 +29,3 @@ export class CreateOfficeLocationDto {
     radiusMeters: number;
 }
 
-export class UpdateOfficeLocationDto extends PartialType(CreateOfficeLocationDto) {}

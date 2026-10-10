@@ -8,6 +8,7 @@ import { AttendanceService } from './attendance.service';
 import {
     AdminMarkAttendanceDto, AdminUpdateAttendanceDto,
     AttendanceFilterDto, MonthlySummaryDto,
+    WeeklyTimesheetDto,
 } from './dto/attendance.dto';
 import { ApiResponse } from '../../common/response/api-response';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -67,5 +68,13 @@ export class AttendanceAdminController {
     async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser('id') adminId: number) {
         await this.attendanceService.adminRemove(id, adminId);
         return ApiResponse.ok(null, 'Record deleted');
+    }
+    @Get('/timesheet/weekly/:employeeId')
+    @ApiOperation({ summary: "Weekly timesheet for any employee (Admin)" })
+    async employeeWeeklyTimesheet(
+        @Param('employeeId', ParseIntPipe) employeeId: number,
+        @Query() dto: WeeklyTimesheetDto,
+    ) {
+        return ApiResponse.ok(await this.attendanceService.adminGetWeeklyTimesheet(employeeId, dto));
     }
 }

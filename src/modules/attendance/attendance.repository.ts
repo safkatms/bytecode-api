@@ -90,6 +90,13 @@ export class AttendanceRepository extends BaseRepository<
         return { month: `${year}-${String(month).padStart(2, '0')}`, summary, records };
     }
 
+    async getWeeklyRecords(employeeId: number, weekStart: Date, weekEnd: Date) {
+        return this.prisma.attendance.findMany({
+            where: { employeeId, ...this.active, attendanceDate: { gte: weekStart, lte: weekEnd } },
+            orderBy: { attendanceDate: 'asc' },
+        });
+    }
+
     async getDailySummary(date: Date) {
         return this.prisma.attendance.groupBy({
             by: ['status'],

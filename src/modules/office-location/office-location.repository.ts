@@ -13,15 +13,15 @@ export class OfficeLocationRepository extends BaseRepository<
         super(prisma.officeLocation);
     }
 
-    async findAllActive() {
-        return this.prisma.officeLocation.findMany({
+    async findActive() {
+        return this.prisma.officeLocation.findFirst({
             where: { isActive: true, deletedAt: null, recordStatus: 'active' },
         });
     }
 
-    async findById(id: number) {
-        return this.prisma.officeLocation.findFirst({
-            where: { id, deletedAt: null, recordStatus: 'active' },
+    async findAllActive() {
+        return this.prisma.officeLocation.findMany({
+            where: { isActive: true, deletedAt: null, recordStatus: 'active' },
         });
     }
 }

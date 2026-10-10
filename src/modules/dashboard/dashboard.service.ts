@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AttendanceStatus } from '@prisma/client';
-import { startOfMonth, endOfMonth, subMonths, format } from 'date-fns';
+
+const BD_OFFSET_MS = 6 * 60 * 60 * 1000;
 
 @Injectable()
 export class DashboardService {
@@ -49,10 +50,10 @@ export class DashboardService {
         const results: Array<{ month: string; present: number; late: number; absent: number }> = [];
 
         for (let i = months - 1; i >= 0; i--) {
-            const ref = subMonths(new Date(), i);
-            const start = startOfMonth(ref);
-            const end = endOfMonth(ref);
-            const label = format(ref, 'yyyy-MM');
+            const ref = this.subMonthsBd(this.nowBd(), i);
+            const start = this.startOfMonthBd(ref);
+            const end = this.endOfMonthBd(ref);
+            const label = this.formatMonth(ref);
 
             const rows = await this.prisma.attendance.groupBy({
                 by: ['status'],
@@ -135,9 +136,9 @@ export class DashboardService {
     }
 
     async getAdminLateReport(month?: string) {
-        const ref = month ? new Date(`${month}-01`) : new Date();
-        const start = startOfMonth(ref);
-        const end = endOfMonth(ref);
+        const ref = month ? new Date(`${month}-01`) : this.nowBd();
+        const start = this.startOfMonthBd(ref);
+        const end = this.endOfMonthBd(ref);
 
         const rows = await this.prisma.attendance.findMany({
             where: {
@@ -172,9 +173,9 @@ export class DashboardService {
 
     async getEmployeeOverview(employeeId: number) {
         const today = this.todayDate();
-        const now = new Date();
-        const start = startOfMonth(now);
-        const end = endOfMonth(now);
+        const now = this.nowBd();
+        const start = this.startOfMonthBd(now);
+        const end = this.endOfMonthBd(now);
 
         const [todayRecord, monthlyStats, devices] = await Promise.all([
             this.prisma.attendance.findFirst({
@@ -219,20 +220,24 @@ export class DashboardService {
         };
     }
 
-    async getEmployeeAttendanceTrend(employeeId: number, months = 6) {
-        const results: Array<{ month: string; present: number; late: number; absent: number; workHours: number }> = [];
+    async getEmployeeWeeklyTrend(employeeId: number, weeks = 6) {
+        const results: Array<{ week: string; present: number; late: number; absent: number; workHours: number }> = [];
 
-        for (let i = months - 1; i >= 0; i--) {
-            const ref = subMonths(new Date(), i);
-            const start = startOfMonth(ref);
-            const end = endOfMonth(ref);
-            const label = format(ref, 'yyyy-MM');
+        const todayBd = this.todayDate();
+        const todayDay = todayBd.getUTCDay();
+        const diffToMon = todayDay === 0 ? -6 : 1 - todayDay;
+        const currentWeekMon = new Date(Date.UTC(todayBd.getUTCFullYear(), todayBd.getUTCMonth(), todayBd.getUTCDate() + diffToMon));
+
+        for (let i = weeks - 1; i >= 0; i--) {
+            const weekStart = new Date(Date.UTC(currentWeekMon.getUTCFullYear(), currentWeekMon.getUTCMonth(), currentWeekMon.getUTCDate() - i * 7));
+            const weekEnd = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + 6));
+            const label = weekStart.toISOString().slice(0, 10);
 
             const rows = await this.prisma.attendance.groupBy({
                 by: ['status'],
                 where: {
                     employeeId,
-                    attendanceDate: { gte: start, lte: end },
+                    attendanceDate: { gte: weekStart, lte: weekEnd },
                     deletedAt: null, recordStatus: 'active',
                 },
                 _count: { id: true },
@@ -243,7 +248,7 @@ export class DashboardService {
             const workHours = rows.reduce((s, r) => s + Number(r._sum?.workHours ?? 0), 0);
 
             results.push({
-                month: label,
+                week: label,
                 present: (m[AttendanceStatus.present] ?? 0) + (m[AttendanceStatus.late] ?? 0),
                 late: m[AttendanceStatus.late] ?? 0,
                 absent: m[AttendanceStatus.absent] ?? 0,
@@ -256,9 +261,31 @@ export class DashboardService {
 
     // ─── Helpers ──────────────────────────────────────────────────
 
+    private nowBd(): Date {
+        return new Date(Date.now() + BD_OFFSET_MS);
+    }
+
     private todayDate(): Date {
-        const d = new Date();
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const bd = this.nowBd();
+        return new Date(Date.UTC(bd.getUTCFullYear(), bd.getUTCMonth(), bd.getUTCDate()));
+    }
+
+    private startOfMonthBd(ref: Date): Date {
+        return new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), 1));
+    }
+
+    private endOfMonthBd(ref: Date): Date {
+        return new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth() + 1, 0));
+    }
+
+    private subMonthsBd(ref: Date, n: number): Date {
+        return new Date(Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth() - n, 1));
+    }
+
+    private formatMonth(ref: Date): string {
+        const y = ref.getUTCFullYear();
+        const m = String(ref.getUTCMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
     }
 
     private groupByToMap(rows: Array<{ status: AttendanceStatus; _count: { id: number } }>): Record<string, number> {

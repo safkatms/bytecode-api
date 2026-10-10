@@ -5,7 +5,7 @@ import { EmployeeRepository } from '../employee/employee.repository';
 import { DeviceService } from '../device/device.service';
 import {
     AdminMarkAttendanceDto, AdminUpdateAttendanceDto,
-    AttendanceFilterDto, CheckInDto, CheckOutDto, MonthlySummaryDto,
+    AttendanceFilterDto, CheckInDto, CheckOutDto, MonthlySummaryDto, WeeklyTimesheetDto,
 } from './dto/attendance.dto';
 import { BadRequestException, ConflictException, NotFoundException } from '../../common/exceptions/app.exception';
 
@@ -15,8 +15,9 @@ export interface MobileContext {
     deviceName: string | null; // X-Device-Name header (optional, e.g. "Samsung Galaxy S24")
 }
 
-// Work starts at 09:00 — anything later is "late"
-const WORK_START_HOUR = 9;
+const BD_OFFSET = '+06:00';
+// Work starts at 10:00 BD (UTC+6) — anything later is "late"
+const WORK_START_HOUR_UTC = 4; // 10:00 BD = 04:00 UTC
 const WORK_START_MINUTE = 0;
 
 @Injectable()
@@ -37,12 +38,14 @@ export class AttendanceService {
         // 1. Validate device (auto-register on first use)
         await this.deviceService.validateAndRegister(employee.id, mobile.deviceId, mobile.deviceName);
 
-        // 2. Check for duplicate
-        const today = this.today();
-        const existing = await this.attendanceRepo.findByEmployeeAndDate(employee.id, today);
-        if (existing?.checkInTime) throw new ConflictException('Already checked in today');
+        const now = this.parseBdTime(dto.checkInTime);
+        if (isNaN(now.getTime())) throw new BadRequestException('Invalid checkInTime format');
 
-        const now = new Date();
+        // 2. Check for duplicate
+        const attendanceDate = this.dateOnly(now);
+        const existing = await this.attendanceRepo.findByEmployeeAndDate(employee.id, attendanceDate);
+        if (existing?.checkInTime) throw new ConflictException('Already checked in for this date');
+
         const lateMinutes = this.calcLateMinutes(now);
         const status = lateMinutes > 0 ? AttendanceStatus.late : AttendanceStatus.present;
 
@@ -61,7 +64,7 @@ export class AttendanceService {
 
         return this.attendanceRepo.create({
             employeeId: employee.id,
-            attendanceDate: today,
+            attendanceDate,
             checkInTime: now,
             checkInLat: dto.latitude,
             checkInLng: dto.longitude,
@@ -83,13 +86,16 @@ export class AttendanceService {
         // Device must already be registered
         await this.deviceService.validateAndRegister(employee.id, mobile.deviceId, mobile.deviceName);
 
-        const today = this.today();
-        const record = await this.attendanceRepo.findByEmployeeAndDate(employee.id, today);
-        if (!record?.checkInTime) throw new BadRequestException('You have not checked in today');
-        if (record.checkOutTime) throw new ConflictException('Already checked out today');
+        const now = this.parseBdTime(dto.checkOutTime);
+        if (isNaN(now.getTime())) throw new BadRequestException('Invalid checkOutTime format');
 
-        const now = new Date();
-        const workHours = this.calcWorkHours(record.checkInTime.toISOString(), now.toISOString());
+        const attendanceDate = this.dateOnly(now);
+        const record = await this.attendanceRepo.findByEmployeeAndDate(employee.id, attendanceDate);
+        if (!record?.checkInTime) throw new BadRequestException('You have not checked in for this date');
+        if (record.checkOutTime) throw new ConflictException('Already checked out for this date');
+        if (now.getTime() <= record.checkInTime.getTime()) throw new BadRequestException('Check-out time must be after check-in time');
+
+        const workHours = this.calcWorkHoursDirect(record.checkInTime, now);
 
         return this.attendanceRepo.update(record.id, {
             checkOutTime: now,
@@ -118,15 +124,74 @@ export class AttendanceService {
         return this.attendanceRepo.getMonthlySummary(employee.id, year, month);
     }
 
+    async getMyWeeklyTimesheet(userId: number, dto: WeeklyTimesheetDto) {
+        const employee = await this.employeeRepo.findByUserId(userId);
+        if (!employee) throw new NotFoundException('Employee profile');
+        return this.buildWeeklyTimesheet(employee.id, dto);
+    }
+
+    async adminGetWeeklyTimesheet(employeeId: number, dto: WeeklyTimesheetDto) {
+        const employee = await this.employeeRepo.findById(employeeId);
+        if (!employee) throw new NotFoundException('Employee');
+        return this.buildWeeklyTimesheet(employeeId, dto);
+    }
+
+    private async buildWeeklyTimesheet(employeeId: number, dto: WeeklyTimesheetDto) {
+        const anchor = dto.date ? new Date(dto.date) : this.todayBd();
+        const { weekStart, weekEnd } = this.getWeekRange(anchor);
+
+        const records = await this.attendanceRepo.getWeeklyRecords(employeeId, weekStart, weekEnd);
+        const recordMap = new Map(records.map((r) => [r.attendanceDate.toISOString().slice(0, 10), r]));
+
+        const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const days: any[] = [];
+        let totalWorkHours = 0;
+        let totalLateMinutes = 0;
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + i));
+            const key = d.toISOString().slice(0, 10);
+            const rec = recordMap.get(key) ?? null;
+
+            totalWorkHours += Number(rec?.workHours ?? 0);
+            totalLateMinutes += rec?.lateMinutes ?? 0;
+
+            days.push({
+                id: rec?.id ?? null,
+                date: key,
+                day: DAY_NAMES[d.getUTCDay()],
+                status: rec?.status ?? null,
+                checkInTime: rec?.checkInTime ?? null,
+                checkOutTime: rec?.checkOutTime ?? null,
+                workHours: rec?.workHours ?? null,
+                lateMinutes: rec?.lateMinutes ?? null,
+            });
+        }
+
+        return {
+            weekStart: weekStart.toISOString().slice(0, 10),
+            weekEnd: weekEnd.toISOString().slice(0, 10),
+            totalWorkHours: Math.round(totalWorkHours * 100) / 100,
+            totalLateMinutes,
+            presentDays: days.filter((d) => d.status === AttendanceStatus.present).length,
+            lateDays: days.filter((d) => d.status === AttendanceStatus.late).length,
+            absentDays: days.filter((d) => !d.status).length,
+            totalDays: days.length,
+            days,
+        };
+    }
+
     async getTodayStatus(userId: number) {
         const employee = await this.employeeRepo.findByUserId(userId);
         if (!employee) throw new NotFoundException('Employee profile');
-        const record = await this.attendanceRepo.findByEmployeeAndDate(employee.id, this.today());
+        const record = await this.attendanceRepo.findByEmployeeAndDate(employee.id, this.todayBd());
         return {
             checkedIn: !!record?.checkInTime,
             checkedOut: !!record?.checkOutTime,
             checkInTime: record?.checkInTime ?? null,
             checkOutTime: record?.checkOutTime ?? null,
+            workHours: record?.workHours ?? null,
+            lateMinutes: record?.lateMinutes ?? null,
             status: record?.status ?? null,
         };
     }
@@ -226,16 +291,39 @@ export class AttendanceService {
 
     // ─── Helpers ──────────────────────────────────────────────────
 
-    private today(): Date {
-        const d = new Date();
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    private todayBd(): Date {
+        const bdMs = Date.now() + 6 * 60 * 60 * 1000;
+        const bd = new Date(bdMs);
+        return new Date(Date.UTC(bd.getUTCFullYear(), bd.getUTCMonth(), bd.getUTCDate()));
+    }
+
+    private parseBdTime(str: string): Date {
+        // If the client omits timezone, treat it as BD time (UTC+6)
+        const hasOffset = /Z$|[+-]\d{2}:\d{2}$/.test(str);
+        return new Date(hasOffset ? str : str + BD_OFFSET);
+    }
+
+    private getWeekRange(anchor: Date): { weekStart: Date; weekEnd: Date } {
+        const day = anchor.getUTCDay();
+        const diffToMon = day === 0 ? -6 : 1 - day;
+        const weekStart = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate() + diffToMon));
+        const weekEnd = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + 6));
+        return { weekStart, weekEnd };
+    }
+
+    private dateOnly(d: Date): Date {
+        return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     }
 
     private calcLateMinutes(checkIn: Date): number {
-        const deadline = new Date(checkIn);
-        deadline.setHours(WORK_START_HOUR, WORK_START_MINUTE, 0, 0);
-        const diff = checkIn.getTime() - deadline.getTime();
+        const deadlineMs = Date.UTC(checkIn.getUTCFullYear(), checkIn.getUTCMonth(), checkIn.getUTCDate(), WORK_START_HOUR_UTC, WORK_START_MINUTE);
+        const diff = checkIn.getTime() - deadlineMs;
         return diff > 0 ? Math.floor(diff / 60_000) : 0;
+    }
+
+    private calcWorkHoursDirect(checkIn: Date, checkOut: Date): number | null {
+        const diff = checkOut.getTime() - checkIn.getTime();
+        return diff > 0 ? Math.round((diff / 3_600_000) * 100) / 100 : null;
     }
 
     private calcWorkHours(checkIn?: string, checkOut?: string): number | null {

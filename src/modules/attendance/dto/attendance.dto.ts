@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
-    IsDateString, IsEnum, IsInt, IsNotEmpty,
+    IsDateString, IsEnum, IsInt, IsISO8601, IsNotEmpty,
     IsNumber, IsOptional, IsString, Max, Min, IsPositive,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -24,6 +24,11 @@ export class CheckInDto {
     @Max(180)
     longitude: number;
 
+    @ApiProperty({ example: '2026-10-10T09:05:00.000Z', description: 'Check-in datetime from device (ISO 8601)' })
+    @IsNotEmpty()
+    @IsString()
+    checkInTime: string;
+
     // deviceId comes from request header X-Device-ID (not body — prevents spoofing)
 }
 
@@ -41,6 +46,11 @@ export class CheckOutDto {
     @Min(-180)
     @Max(180)
     longitude: number;
+
+    @ApiProperty({ example: '2026-10-10T18:00:00.000Z', description: 'Check-out datetime from device (ISO 8601)' })
+    @IsNotEmpty()
+    @IsString()
+    checkOutTime: string;
 }
 
 // ─── Admin manual attendance ──────────────────────────────────
@@ -127,4 +137,11 @@ export class MonthlySummaryDto {
     @Type(() => Number)
     @IsInt()
     employeeId?: number;
+}
+
+export class WeeklyTimesheetDto {
+    @ApiPropertyOptional({ example: '2026-10-06', description: 'Any date in the target week (defaults to current week)' })
+    @IsOptional()
+    @IsDateString()
+    date?: string;
 }

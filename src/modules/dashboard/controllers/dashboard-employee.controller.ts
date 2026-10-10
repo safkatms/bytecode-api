@@ -22,13 +22,13 @@ export class DashboardEmployeeController {
     }
 
     @Get('attendance-trend')
-    @ApiOperation({ summary: 'My attendance trend for the last N months' })
-    @ApiQuery({ name: 'months', required: false, example: 6 })
+    @ApiOperation({ summary: 'My attendance trend for the last N weeks' })
+    @ApiQuery({ name: 'weeks', required: false, example: 6 })
     async attendanceTrend(
         @CurrentUser('id') userId: number,
-        @Query('months', new DefaultValuePipe(6), ParseIntPipe) months: number,
+        @Query('weeks', new DefaultValuePipe(6), ParseIntPipe) weeks: number,
     ) {
         const emp = await this.employeeService.findByUserId(userId);
-        return ApiResponse.ok(await this.dashboardService.getEmployeeAttendanceTrend(emp.id, months));
+        return ApiResponse.ok(await this.dashboardService.getEmployeeWeeklyTrend(emp.id, weeks));
     }
 }

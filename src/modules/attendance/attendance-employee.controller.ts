@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Post, Query, Headers, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AttendanceService } from './attendance.service';
-import { AttendanceFilterDto, CheckInDto, CheckOutDto, MonthlySummaryDto } from './dto/attendance.dto';
+import { AttendanceFilterDto, CheckInDto, CheckOutDto, MonthlySummaryDto, WeeklyTimesheetDto } from './dto/attendance.dto';
 import { ApiResponse } from '../../common/response/api-response';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { BadRequestException } from '../../common/exceptions/app.exception';
@@ -63,5 +63,11 @@ export class AttendanceEmployeeController {
     @ApiOperation({ summary: 'My monthly attendance summary' })
     async summary(@CurrentUser('id') userId: number, @Query() dto: MonthlySummaryDto) {
         return ApiResponse.ok(await this.attendanceService.getMyMonthlySummary(userId, dto));
+    }
+
+    @Get('timesheet/weekly')
+    @ApiOperation({ summary: 'My weekly timesheet — Mon to Sun with check-in/out times and work hours' })
+    async weeklyTimesheet(@CurrentUser('id') userId: number, @Query() dto: WeeklyTimesheetDto) {
+        return ApiResponse.ok(await this.attendanceService.getMyWeeklyTimesheet(userId, dto));
     }
 }
