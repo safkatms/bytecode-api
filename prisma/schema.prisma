@@ -147,8 +147,16 @@ enum AttendanceStatus {
   late
   half_day
   on_leave
+  sick_leave
   holiday
   weekend
+}
+
+enum SickLeaveStatus {
+  pending
+  approved
+  rejected
+  cancelled
 }
 
 // ─── Department ───────────────────────────────────────────────
@@ -203,6 +211,8 @@ model Employee {
   leadingTeams    Team[]       @relation("TeamLeader")
   attendances     Attendance[]
   trustedDevices  TrustedDevice[]
+  sickLeaveRequests SickLeaveRequest[]
+  sickLeaveBalances SickLeaveBalance[]
 
   @@index([departmentId])
   @@index([teamId])
@@ -233,6 +243,66 @@ model Team {
 
   @@index([leaderId])
   @@map("teams")
+}
+
+// ─── Sick Leave ───────────────────────────────────────────────
+
+model SickLeavePolicy {
+  id         Int      @id @default(autoincrement())
+  year       Int      @unique
+  totalDays  Int      @default(14) @map("total_days")
+  isActive   Boolean  @default(true) @map("is_active")
+
+  createdAt  DateTime @default(now()) @map("created_at")
+  createdBy  Int      @map("created_by")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  updatedBy  Int      @map("updated_by")
+
+  @@map("sick_leave_policies")
+}
+
+model SickLeaveBalance {
+  id            Int      @id @default(autoincrement())
+  employeeId    Int      @map("employee_id")
+  year          Int
+  totalDays     Int      @map("total_days")
+  usedDays      Int      @default(0) @map("used_days")
+
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, year])
+  @@index([employeeId])
+  @@map("sick_leave_balances")
+}
+
+model SickLeaveRequest {
+  id          Int              @id @default(autoincrement())
+  employeeId  Int              @map("employee_id")
+  startDate   DateTime         @map("start_date") @db.Date
+  endDate     DateTime         @map("end_date") @db.Date
+  totalDays   Int              @map("total_days")
+  reason      String?          @db.VarChar(500)
+  status      SickLeaveStatus  @default(pending)
+
+  reviewedBy  Int?             @map("reviewed_by")
+  reviewedAt  DateTime?        @map("reviewed_at")
+  reviewNote  String?          @map("review_note") @db.VarChar(500)
+
+  createdAt   DateTime         @default(now()) @map("created_at")
+  createdBy   Int              @map("created_by")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  updatedBy   Int              @map("updated_by")
+  deletedAt   DateTime?        @map("deleted_at")
+  deletedBy   Int?             @map("deleted_by")
+  recordStatus RecordStatus    @default(active) @map("record_status")
+  version     Int              @default(1)
+
+  employee    Employee         @relation(fields: [employeeId], references: [id])
+  attendances Attendance[]
+
+  @@index([employeeId])
+  @@index([status])
+  @@map("sick_leave_requests")
 }
 
 // ─── Trusted Devices ──────────────────────────────────────────
@@ -300,6 +370,7 @@ model Attendance {
   deviceId        String?          @map("device_id") @db.VarChar(255)
   isManual        Boolean          @default(false) @map("is_manual") // admin override
   note            String?
+  sickLeaveRequestId Int?          @map("sick_leave_request_id")
 
   // audit trail
   createdAt       DateTime         @default(now()) @map("created_at")
@@ -312,6 +383,7 @@ model Attendance {
   version         Int              @default(1)
 
   employee        Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  sickLeaveRequest SickLeaveRequest? @relation(fields: [sickLeaveRequestId], references: [id])
 
   @@unique([employeeId, attendanceDate])
   @@index([attendanceDate])
