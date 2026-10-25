@@ -38,6 +38,16 @@ export class SickLeaveAdminController {
         return ApiResponse.ok(await this.sickLeaveService.getPolicy(year));
     }
 
+    @Get('balance/:employeeId')
+    @ApiOperation({ summary: 'Get sick leave balance for an employee' })
+    async getBalance(
+        @Param('employeeId', ParseIntPipe) employeeId: number,
+        @Query('year') yearStr: string | undefined,
+    ) {
+        const year = yearStr ? parseInt(yearStr, 10) : undefined;
+        return ApiResponse.ok(await this.sickLeaveService.getEmployeeBalance(employeeId, year));
+    }
+
     @Get('requests')
     @ApiOperation({ summary: 'List all sick leave requests with filters' })
     async listRequests(@Query() filter: SickLeaveFilterDto) {

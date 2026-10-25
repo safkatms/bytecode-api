@@ -18,6 +18,8 @@ import { OfficeLocationModule } from '@modules/office-location/office-location.m
 import { DepartmentModule } from '@modules/department/department.module';
 import { TeamModule } from '@modules/team/team.module';
 import { SickLeaveModule } from '@modules/sick-leave/sick-leave.module';
+import { CasualLeaveModule } from '@modules/casual-leave/casual-leave.module';
+import { HolidayModule } from '@modules/holiday/holiday.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { SickLeaveModule } from '@modules/sick-leave/sick-leave.module';
     DepartmentModule,
     TeamModule,
     SickLeaveModule,
+    CasualLeaveModule,
+    HolidayModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

@@ -190,15 +190,19 @@ export class AttendanceService {
     async getTodayStatus(userId: number) {
         const employee = await this.employeeRepo.findByUserId(userId);
         if (!employee) throw new NotFoundException('Employee profile');
-        const record = await this.attendanceRepo.findByEmployeeAndDate(employee.id, this.todayBd());
+        const today = this.todayBd();
+        const record = await this.attendanceRepo.findByEmployeeAndDate(employee.id, today);
+        const weekendDays = ((employee as any).weekendDays ?? [5, 6]) as number[];
+        const isWeekend = weekendDays.includes(today.getUTCDay());
         return {
+            isWeekend,
             checkedIn: !!record?.checkInTime,
             checkedOut: !!record?.checkOutTime,
             checkInTime: record?.checkInTime ?? null,
             checkOutTime: record?.checkOutTime ?? null,
             workHours: record?.workHours ?? null,
             lateMinutes: record?.lateMinutes ?? null,
-            status: record?.status ?? null,
+            status: record?.status ?? (isWeekend ? AttendanceStatus.weekend : null),
         };
     }
 

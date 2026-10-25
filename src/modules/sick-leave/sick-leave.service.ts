@@ -231,6 +231,36 @@ export class SickLeaveService {
         return request;
     }
 
+    async getEmployeeBalance(employeeId: number, year?: number) {
+        const employee = await this.prisma.employee.findFirst({
+            where: { id: employeeId, deletedAt: null, recordStatus: 'active' },
+            select: {
+                id: true, employeeCode: true, designation: true,
+                user: { select: { id: true, firstName: true, lastName: true, email: true } },
+            },
+        });
+        if (!employee) throw new NotFoundException('Employee');
+
+        const y = year ?? new Date().getFullYear();
+        const policy = await this.repo.getActivePolicyYear(y);
+
+        if (policy) {
+            await this.repo.upsertBalance(employeeId, y, policy.totalDays);
+        }
+
+        const balance = await this.repo.findBalance(employeeId, y);
+
+        return {
+            employee,
+            year: y,
+            totalDays: balance?.totalDays ?? policy?.totalDays ?? null,
+            usedDays: balance?.usedDays ?? 0,
+            remainingDays: balance
+                ? balance.totalDays - balance.usedDays
+                : (policy?.totalDays ?? null),
+        };
+    }
+
     async listRequests(filter: SickLeaveFilterDto) {
         return this.repo.search(filter);
     }

@@ -37,9 +37,8 @@ export class DashboardService {
             todayAttendance: {
                 present: statusMap[AttendanceStatus.present] ?? 0,
                 late: statusMap[AttendanceStatus.late] ?? 0,
-                absent: statusMap[AttendanceStatus.absent] ?? 0,
-                onLeave: statusMap[AttendanceStatus.on_leave] ?? 0,
-                halfDay: statusMap[AttendanceStatus.half_day] ?? 0,
+                onCasualLeave: statusMap[AttendanceStatus.casual_leave] ?? 0,
+                onSickLeave: statusMap[AttendanceStatus.sick_leave] ?? 0,
                 notMarked: activeEmployees - Object.values(statusMap).reduce((s, n) => s + n, 0),
             },
             devices: { trusted: pendingDevices },
@@ -177,7 +176,8 @@ export class DashboardService {
         const start = this.startOfMonthBd(now);
         const end = this.endOfMonthBd(now);
 
-        const [todayRecord, monthlyStats, devices] = await Promise.all([
+        const [employee, todayRecord, monthlyStats, devices] = await Promise.all([
+            this.prisma.employee.findUnique({ where: { id: employeeId }, select: { weekendDays: true } }),
             this.prisma.attendance.findFirst({
                 where: { employeeId, attendanceDate: today, deletedAt: null, recordStatus: 'active' },
             }),
@@ -200,20 +200,22 @@ export class DashboardService {
         const statusMap = this.groupByToMap(monthlyStats);
         const lateMinutes = monthlyStats.find((r) => r.status === AttendanceStatus.late)?._sum?.lateMinutes ?? 0;
 
+        const weekendDays = (employee?.weekendDays ?? [5, 6]) as number[];
+        const isWeekend = weekendDays.includes(today.getUTCDay());
+
         return {
             today: {
                 checkedIn: !!todayRecord?.checkInTime,
                 checkedOut: !!todayRecord?.checkOutTime,
                 checkInTime: todayRecord?.checkInTime ?? null,
                 checkOutTime: todayRecord?.checkOutTime ?? null,
-                status: todayRecord?.status ?? null,
+                status: todayRecord?.status ?? (isWeekend ? AttendanceStatus.weekend : null),
                 workHours: todayRecord?.workHours ?? null,
             },
             thisMonth: {
                 present: (statusMap[AttendanceStatus.present] ?? 0) + (statusMap[AttendanceStatus.late] ?? 0),
                 late: statusMap[AttendanceStatus.late] ?? 0,
-                absent: statusMap[AttendanceStatus.absent] ?? 0,
-                onLeave: statusMap[AttendanceStatus.on_leave] ?? 0,
+                onLeave: (statusMap[AttendanceStatus.on_leave] ?? 0) + (statusMap[AttendanceStatus.sick_leave] ?? 0) + (statusMap[AttendanceStatus.casual_leave] ?? 0),
                 totalLateMinutes: lateMinutes,
             },
             devices,
