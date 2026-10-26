@@ -33,8 +33,8 @@ export class AuthService {
     const isMatch = await bcrypt.compare(dto.password, user.password);
     if (!isMatch) throw new UnauthorizedException('Invalid credentials');
 
-    // Device validation for employees — skipped for admins (no employee profile)
-    if (dto.deviceId) {
+    // Device validation for employees only — admins are never checked
+    if (user.role !== 'admin' && dto.deviceId) {
       const employee = await this.employeeService.findByUserId(user.id).catch(() => null);
       if (employee) {
         await this.deviceService.validateAndRegister(employee.id, dto.deviceId, dto.deviceName ?? null);
