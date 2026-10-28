@@ -80,7 +80,8 @@ model User {
   avatarUrl           String?   @map("avatar_url")
   role                Role      @default(user)
   isActive            Boolean   @default(true)      @map("is_active")
-  refreshToken        String?   @map("refresh_token")
+  canSwitchUser       Boolean   @default(false)     @map("can_switch_user")
+  refreshToken       String?   @map("refresh_token")
 
   // security
   lastLoginAt         DateTime? @map("last_login_at")
@@ -223,7 +224,8 @@ model Employee {
   sickLeaveBalances    SickLeaveBalance[]
   casualLeaveRequests  CasualLeaveRequest[]
   casualLeaveBalances  CasualLeaveBalance[]
-  holidayExclusions    HolidayExclusion[]
+  casualLeaveEarnings  CasualLeaveEarning[]
+  holidayExclusions   HolidayExclusion[]
 
   @@index([departmentId])
   @@index([teamId])
@@ -479,6 +481,22 @@ model CasualLeaveBalance {
   @@unique([employeeId, year])
   @@index([employeeId])
   @@map("casual_leave_balances")
+}
+
+// Earned casual leave: +1 day for each weekend / holiday-exclusion day actually worked
+model CasualLeaveEarning {
+  id         Int      @id @default(autoincrement())
+  employeeId Int      @map("employee_id")
+  date       DateTime @db.Date
+  year       Int
+  source     String   @db.VarChar(20) // weekend_work | holiday_work
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@index([employeeId, year])
+  @@map("casual_leave_earnings")
 }
 
 model CasualLeaveRequest {

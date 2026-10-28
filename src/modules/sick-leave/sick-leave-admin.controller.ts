@@ -5,7 +5,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { SickLeaveService } from './sick-leave.service';
-import { AdminMarkSickLeaveDto, ReviewSickLeaveDto, SetSickLeavePolicyDto, SickLeaveFilterDto } from './dto/sick-leave.dto';
+import { AdjustSickLeaveBalanceDto, AdminMarkSickLeaveDto, ReviewSickLeaveDto, SetSickLeavePolicyDto, SickLeaveBalanceFilterDto, SickLeaveFilterDto } from './dto/sick-leave.dto';
 import { ApiResponse } from '../../common/response/api-response';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -38,6 +38,12 @@ export class SickLeaveAdminController {
         return ApiResponse.ok(await this.sickLeaveService.getPolicy(year));
     }
 
+    @Get('balances')
+    @ApiOperation({ summary: 'List sick leave balances of all active employees (paginated, searchable)' })
+    async listBalances(@Query() filter: SickLeaveBalanceFilterDto) {
+        return this.sickLeaveService.listBalances(filter);
+    }
+
     @Get('balance/:employeeId')
     @ApiOperation({ summary: 'Get sick leave balance for an employee' })
     async getBalance(
@@ -46,6 +52,19 @@ export class SickLeaveAdminController {
     ) {
         const year = yearStr ? parseInt(yearStr, 10) : undefined;
         return ApiResponse.ok(await this.sickLeaveService.getEmployeeBalance(employeeId, year));
+    }
+
+    @Patch('balance/:employeeId')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Set already-used days (opening balance for mid-year go-live)' })
+    async adjustBalance(
+        @Param('employeeId', ParseIntPipe) employeeId: number,
+        @Body() dto: AdjustSickLeaveBalanceDto,
+    ) {
+        return ApiResponse.ok(
+            await this.sickLeaveService.adjustBalance(employeeId, dto),
+            'Balance updated',
+        );
     }
 
     @Get('requests')

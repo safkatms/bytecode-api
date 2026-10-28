@@ -3,6 +3,7 @@ import { AttendanceStatus } from '@prisma/client';
 import { AttendanceRepository } from './attendance.repository';
 import { EmployeeRepository } from '../employee/employee.repository';
 import { DeviceService } from '../device/device.service';
+import { CasualLeaveService } from '../casual-leave/casual-leave.service';
 import {
     AdminMarkAttendanceDto, AdminUpdateAttendanceDto,
     AttendanceFilterDto, CheckInDto, CheckOutDto, MonthlySummaryDto, WeeklyTimesheetDto,
@@ -26,6 +27,7 @@ export class AttendanceService {
         private readonly attendanceRepo: AttendanceRepository,
         private readonly employeeRepo: EmployeeRepository,
         private readonly deviceService: DeviceService,
+        private readonly casualLeaveService: CasualLeaveService,
     ) { }
 
     // ─── Employee: Check In ───────────────────────────────────────
@@ -51,7 +53,7 @@ export class AttendanceService {
 
         if (existing) {
             // Record exists (admin pre-created) — fill check-in
-            return this.attendanceRepo.update(existing.id, {
+            const updated = await this.attendanceRepo.update(existing.id, {
                 checkInTime: now,
                 checkInLat: dto.latitude,
                 checkInLng: dto.longitude,
@@ -60,9 +62,11 @@ export class AttendanceService {
                 deviceId: mobile.deviceId,
                 updatedBy: employee.userId,
             });
+            await this.casualLeaveService.grantEarnedLeaveForWorkedDay(employee.id, attendanceDate);
+            return updated;
         }
 
-        return this.attendanceRepo.create({
+        const created = await this.attendanceRepo.create({
             employeeId: employee.id,
             attendanceDate,
             checkInTime: now,
@@ -75,6 +79,8 @@ export class AttendanceService {
             createdBy: employee.userId,
             updatedBy: employee.userId,
         });
+        await this.casualLeaveService.grantEarnedLeaveForWorkedDay(employee.id, attendanceDate);
+        return created;
     }
 
     // ─── Employee: Check Out ──────────────────────────────────────
@@ -218,7 +224,7 @@ export class AttendanceService {
 
         const workHours = this.calcWorkHours(dto.checkInTime, dto.checkOutTime);
 
-        return this.attendanceRepo.create({
+        const created = await this.attendanceRepo.create({
             employeeId: dto.employeeId,
             attendanceDate: date,
             status: dto.status,
@@ -232,6 +238,10 @@ export class AttendanceService {
             createdBy: adminId,
             updatedBy: adminId,
         });
+        if (dto.checkInTime) {
+            await this.casualLeaveService.grantEarnedLeaveForWorkedDay(employee.id, date);
+        }
+        return created;
     }
 
     async adminUpdate(id: number, dto: AdminUpdateAttendanceDto, adminId: number) {
@@ -297,6 +307,9 @@ export class AttendanceService {
         await this.attendanceRepo.update(id, {
             deletedAt: new Date(), deletedBy: adminId, recordStatus: 'deleted', updatedBy: adminId,
         });
+        if (record.checkInTime) {
+            await this.casualLeaveService.revokeEarnedLeave(record.employeeId, record.attendanceDate);
+        }
     }
 
     // ─── Helpers ──────────────────────────────────────────────────

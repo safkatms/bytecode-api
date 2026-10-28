@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { User } from '@prisma/client';
+import { Role, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { UserService } from '../user/user.service';
@@ -12,6 +12,7 @@ import {
   UnauthorizedException,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
 } from '../../common/exceptions/app.exception';
 
 @Injectable()
@@ -137,7 +138,11 @@ export class AuthService {
   }
 
   async switchUser(adminId: number, targetUserId: number) {
-    // remove: admin role check — enforced by @Roles guard at controller level
+    // admin role is enforced by @Roles guard; switching also needs the explicit flag
+    const admin = await this.userService.getUserById(adminId);
+    if (!admin?.canSwitchUser) {
+      throw new ForbiddenException('You do not have permission to switch users');
+    }
 
     const target = await this.userService.getUserById(targetUserId);
 

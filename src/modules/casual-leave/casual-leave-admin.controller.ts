@@ -6,7 +6,8 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { CasualLeaveService } from './casual-leave.service';
 import {
-    AdminMarkCasualLeaveDto, CasualLeaveFilterDto,
+    AdjustCasualLeaveBalanceDto, AdminMarkCasualLeaveDto, BackfillEarnedLeaveDto,
+    CasualLeaveBalanceFilterDto, CasualLeaveFilterDto,
     ReviewCasualLeaveDto, SetCasualLeavePolicyDto,
 } from './dto/casual-leave.dto';
 import { ApiResponse } from '../../common/response/api-response';
@@ -41,6 +42,24 @@ export class CasualLeaveAdminController {
         return ApiResponse.ok(await this.casualLeaveService.getPolicy(year));
     }
 
+    @Post('earned/backfill')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: 'Grant earned casual days for past weekend / holiday-exclusion work found in attendance (idempotent)',
+    })
+    async backfillEarned(@Body() dto: BackfillEarnedLeaveDto) {
+        return ApiResponse.ok(
+            await this.casualLeaveService.backfillEarnedLeave(dto.year),
+            'Earned leave backfilled',
+        );
+    }
+
+    @Get('balances')
+    @ApiOperation({ summary: 'List casual leave balances of all active employees (paginated, searchable)' })
+    async listBalances(@Query() filter: CasualLeaveBalanceFilterDto) {
+        return this.casualLeaveService.listBalances(filter);
+    }
+
     @Get('balance/:employeeId')
     @ApiOperation({ summary: 'Get casual leave balance for an employee (includes carry-forward)' })
     async getBalance(
@@ -49,6 +68,19 @@ export class CasualLeaveAdminController {
     ) {
         const year = yearStr ? parseInt(yearStr, 10) : undefined;
         return ApiResponse.ok(await this.casualLeaveService.getEmployeeBalance(employeeId, year));
+    }
+
+    @Patch('balance/:employeeId')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Set already-used / carry-forward days (opening balance for mid-year go-live)' })
+    async adjustBalance(
+        @Param('employeeId', ParseIntPipe) employeeId: number,
+        @Body() dto: AdjustCasualLeaveBalanceDto,
+    ) {
+        return ApiResponse.ok(
+            await this.casualLeaveService.adjustBalance(employeeId, dto),
+            'Balance updated',
+        );
     }
 
     @Get('requests')

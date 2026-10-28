@@ -90,6 +90,13 @@ export class SickLeaveRepository extends BaseRepository<
         });
     }
 
+    async setUsedDays(employeeId: number, year: number, usedDays: number) {
+        return this.prisma.sickLeaveBalance.update({
+            where: { employeeId_year: { employeeId, year } },
+            data: { usedDays },
+        });
+    }
+
     async incrementUsedDays(employeeId: number, year: number, days: number) {
         return this.prisma.sickLeaveBalance.update({
             where: { employeeId_year: { employeeId, year } },

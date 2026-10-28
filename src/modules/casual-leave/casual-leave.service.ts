@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { PaginatedResponse } from '../../common/response/paginated-response';
 import { PrismaService } from '../../database/prisma.service';
 import { CasualLeaveRepository } from './casual-leave.repository';
 import {
-    AdminMarkCasualLeaveDto, ApplyCasualLeaveDto, CasualLeaveFilterDto,
+    AdjustCasualLeaveBalanceDto, AdminMarkCasualLeaveDto, ApplyCasualLeaveDto,
+    CasualLeaveBalanceFilterDto, CasualLeaveFilterDto,
     ReviewCasualLeaveDto, SetCasualLeavePolicyDto,
 } from './dto/casual-leave.dto';
 import {
@@ -54,7 +57,8 @@ export class CasualLeaveService {
         // Ensure balance exists (with carry-forward applied)
         await this.ensureBalance(employee.id, year, policy.totalDays, policy.maxCarryForward);
         const balance = await this.repo.findBalance(employee.id, year);
-        const remaining = balance!.allocatedDays + balance!.carryForwardDays - balance!.usedDays;
+        const earned = await this.repo.countEarned(employee.id, year);
+        const remaining = balance!.allocatedDays + balance!.carryForwardDays + earned - balance!.usedDays;
 
         if (totalDays > remaining) {
             throw new BadRequestException(
@@ -106,18 +110,7 @@ export class CasualLeaveService {
         }
 
         const balance = await this.repo.findBalance(employee.id, y);
-        const totalDays = balance
-            ? balance.allocatedDays + balance.carryForwardDays
-            : (policy?.totalDays ?? null);
-
-        return {
-            year: y,
-            allocatedDays: balance?.allocatedDays ?? policy?.totalDays ?? null,
-            carryForwardDays: balance?.carryForwardDays ?? 0,
-            totalDays,
-            usedDays: balance?.usedDays ?? 0,
-            remainingDays: totalDays !== null ? totalDays - (balance?.usedDays ?? 0) : null,
-        };
+        return { year: y, ...(await this.summarize(employee.id, y, balance, policy?.totalDays ?? null)) };
     }
 
     // ─── Admin: Review ────────────────────────────────────────────
@@ -132,7 +125,8 @@ export class CasualLeaveService {
         if (dto.action === 'approved') {
             const year = new Date(request.startDate).getFullYear();
             const balance = await this.repo.findBalance(request.employeeId, year);
-            const remaining = (balance?.allocatedDays ?? 0) + (balance?.carryForwardDays ?? 0) - (balance?.usedDays ?? 0);
+            const earned = await this.repo.countEarned(request.employeeId, year);
+            const remaining = (balance?.allocatedDays ?? 0) + (balance?.carryForwardDays ?? 0) + earned - (balance?.usedDays ?? 0);
 
             if (request.totalDays > remaining) {
                 throw new BadRequestException(
@@ -166,7 +160,8 @@ export class CasualLeaveService {
         if (policy) {
             await this.ensureBalance(employee.id, year, policy.totalDays, policy.maxCarryForward);
             const balance = await this.repo.findBalance(employee.id, year);
-            const remaining = (balance?.allocatedDays ?? 0) + (balance?.carryForwardDays ?? 0) - (balance?.usedDays ?? 0);
+            const earned = await this.repo.countEarned(employee.id, year);
+            const remaining = (balance?.allocatedDays ?? 0) + (balance?.carryForwardDays ?? 0) + earned - (balance?.usedDays ?? 0);
             if (remaining < 1) {
                 throw new BadRequestException(`Employee has no remaining casual leave balance for ${year}`);
             }
@@ -247,19 +242,201 @@ export class CasualLeaveService {
         }
 
         const balance = await this.repo.findBalance(employeeId, y);
-        const totalDays = balance
-            ? balance.allocatedDays + balance.carryForwardDays
-            : (policy?.totalDays ?? null);
+        return { employee, year: y, ...(await this.summarize(employeeId, y, balance, policy?.totalDays ?? null)) };
+    }
 
+    private async summarize(
+        employeeId: number,
+        year: number,
+        balance: { allocatedDays: number; carryForwardDays: number; usedDays: number } | null,
+        policyDays: number | null,
+    ) {
+        const earnedDays = await this.repo.countEarned(employeeId, year);
+        return this.buildSummary(balance, policyDays, earnedDays);
+    }
+
+    private buildSummary(
+        balance: { allocatedDays: number; carryForwardDays: number; usedDays: number } | null | undefined,
+        policyDays: number | null,
+        earnedDays: number,
+    ) {
+        const allocatedDays = balance?.allocatedDays ?? policyDays;
+        const carryForwardDays = balance?.carryForwardDays ?? 0;
+        const usedDays = balance?.usedDays ?? 0;
+        const totalDays = allocatedDays !== null ? allocatedDays + carryForwardDays + earnedDays : null;
         return {
-            employee,
-            year: y,
-            allocatedDays: balance?.allocatedDays ?? policy?.totalDays ?? null,
-            carryForwardDays: balance?.carryForwardDays ?? 0,
-            totalDays,
-            usedDays: balance?.usedDays ?? 0,
-            remainingDays: totalDays !== null ? totalDays - (balance?.usedDays ?? 0) : null,
+            allocatedDays, carryForwardDays, earnedDays, totalDays, usedDays,
+            remainingDays: totalDays !== null ? totalDays - usedDays : null,
         };
+    }
+
+    // ─── Earned leave (weekend / holiday-exclusion work) ──────────
+
+    /**
+     * Grants +1 earned casual day if the employee worked on a day off:
+     * a personal weekend day, or a holiday day they are excluded from.
+     * Idempotent per (employee, date). Returns the source, or null if not earned.
+     */
+    async grantEarnedLeaveForWorkedDay(employeeId: number, date: Date): Promise<string | null> {
+        const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        const source = await this.resolveEarnedSource(employeeId, day);
+        if (!source) return null;
+        await this.repo.createEarning(employeeId, day, source);
+        return source;
+    }
+
+    async revokeEarnedLeave(employeeId: number, date: Date) {
+        const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        await this.repo.deleteEarning(employeeId, day);
+    }
+
+    /** Re-scans attendance with a check-in for a year and grants any missing earned days. */
+    async backfillEarnedLeave(year: number) {
+        const records = await this.prisma.attendance.findMany({
+            where: {
+                deletedAt: null, recordStatus: 'active',
+                checkInTime: { not: null },
+                attendanceDate: { gte: new Date(Date.UTC(year, 0, 1)), lte: new Date(Date.UTC(year, 11, 31)) },
+            },
+            select: { employeeId: true, attendanceDate: true },
+        });
+
+        let granted = 0;
+        for (const r of records) {
+            if (await this.grantEarnedLeaveForWorkedDay(r.employeeId, r.attendanceDate)) granted++;
+        }
+        return { year, scanned: records.length, earnedDaysOnRecord: granted };
+    }
+
+    private async resolveEarnedSource(employeeId: number, day: Date): Promise<string | null> {
+        const employee = await this.prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: { weekendDays: true, teamId: true },
+        });
+        if (!employee) return null;
+
+        if ((employee.weekendDays as number[]).includes(day.getUTCDay())) return 'weekend_work';
+
+        const holiday = await this.prisma.holiday.findFirst({
+            where: {
+                deletedAt: null, recordStatus: 'active', isActive: true,
+                startDate: { lte: day }, endDate: { gte: day },
+                exclusions: {
+                    some: {
+                        OR: [
+                            { employeeId },
+                            ...(employee.teamId ? [{ teamId: employee.teamId }] : []),
+                        ],
+                    },
+                },
+            },
+            select: { id: true },
+        });
+        return holiday ? 'holiday_work' : null;
+    }
+
+    /** Paginated casual leave balances for all active employees (read-only, creates no rows). */
+    async listBalances(filter: CasualLeaveBalanceFilterDto) {
+        const { page = 1, limit = 10, search } = filter;
+        const year = filter.year ?? new Date().getFullYear();
+
+        const where: Prisma.EmployeeWhereInput = {
+            deletedAt: null,
+            recordStatus: 'active',
+            ...(search && {
+                OR: [
+                    { employeeCode: { contains: search, mode: 'insensitive' } },
+                    { user: { firstName: { contains: search, mode: 'insensitive' } } },
+                    { user: { lastName: { contains: search, mode: 'insensitive' } } },
+                    { user: { email: { contains: search, mode: 'insensitive' } } },
+                ],
+            }),
+        };
+
+        const [employees, total, policy] = await Promise.all([
+            this.prisma.employee.findMany({
+                where, skip: filter.skip, take: limit,
+                orderBy: { employeeCode: 'asc' },
+                select: {
+                    id: true, employeeCode: true, designation: true,
+                    user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                },
+            }),
+            this.prisma.employee.count({ where }),
+            this.repo.getActivePolicyYear(year),
+        ]);
+
+        const ids = employees.map((e) => e.id);
+        const [current, previous] = await Promise.all([
+            this.prisma.casualLeaveBalance.findMany({ where: { employeeId: { in: ids }, year } }),
+            this.prisma.casualLeaveBalance.findMany({ where: { employeeId: { in: ids }, year: year - 1 } }),
+        ]);
+        const [earnedMap, prevEarnedMap] = await Promise.all([
+            this.repo.countEarnedByEmployee(ids, year),
+            this.repo.countEarnedByEmployee(ids, year - 1),
+        ]);
+        const currentMap = new Map(current.map((b) => [b.employeeId, b]));
+        const previousMap = new Map(previous.map((b) => [b.employeeId, b]));
+
+        const data = employees.map((employee) => {
+            let balance: { allocatedDays: number; carryForwardDays: number; usedDays: number } | undefined =
+                currentMap.get(employee.id);
+
+            // no row yet: show what ensureBalance would create
+            if (!balance && policy) {
+                const prev = previousMap.get(employee.id);
+                let carryForwardDays = 0;
+                if (prev) {
+                    const left = prev.allocatedDays + prev.carryForwardDays + (prevEarnedMap.get(employee.id) ?? 0) - prev.usedDays;
+                    carryForwardDays = Math.min(policy.maxCarryForward, Math.max(0, left));
+                }
+                balance = { allocatedDays: policy.totalDays, carryForwardDays, usedDays: 0 };
+            }
+
+            return {
+                employee, year,
+                ...this.buildSummary(balance, policy?.totalDays ?? null, earnedMap.get(employee.id) ?? 0),
+            };
+        });
+
+        return new PaginatedResponse(data, total, page, limit);
+    }
+
+    /**
+     * Opening-balance correction: lets an admin record leave taken before the app
+     * was in use (e.g. go-live mid-year) by overwriting usedDays / carryForwardDays.
+     */
+    async adjustBalance(employeeId: number, dto: AdjustCasualLeaveBalanceDto) {
+        if (dto.usedDays === undefined && dto.carryForwardDays === undefined) {
+            throw new BadRequestException('Provide usedDays and/or carryForwardDays');
+        }
+
+        const policy = await this.repo.getActivePolicyYear(dto.year);
+        if (!policy) {
+            throw new BadRequestException(`No casual leave policy defined for ${dto.year}`);
+        }
+
+        const employee = await this.prisma.employee.findFirst({
+            where: { id: employeeId, deletedAt: null, recordStatus: 'active' },
+        });
+        if (!employee) throw new NotFoundException('Employee');
+
+        const balance = await this.ensureBalance(employeeId, dto.year, policy.totalDays, policy.maxCarryForward);
+
+        const carry = dto.carryForwardDays ?? balance.carryForwardDays;
+        const used = dto.usedDays ?? balance.usedDays;
+        const earned = await this.repo.countEarned(employeeId, dto.year);
+        if (used > balance.allocatedDays + carry + earned) {
+            throw new BadRequestException(
+                `usedDays (${used}) cannot exceed total entitlement (${balance.allocatedDays + carry + earned})`,
+            );
+        }
+
+        await this.repo.updateBalance(employeeId, dto.year, {
+            usedDays: dto.usedDays,
+            carryForwardDays: dto.carryForwardDays,
+        });
+        return this.getEmployeeBalance(employeeId, dto.year);
     }
 
     async listRequests(filter: CasualLeaveFilterDto) {
@@ -292,7 +469,8 @@ export class CasualLeaveService {
         let carryForward = 0;
 
         if (prevBalance) {
-            const prevRemaining = prevBalance.allocatedDays + prevBalance.carryForwardDays - prevBalance.usedDays;
+            const prevEarned = await this.repo.countEarned(employeeId, year - 1);
+            const prevRemaining = prevBalance.allocatedDays + prevBalance.carryForwardDays + prevEarned - prevBalance.usedDays;
             carryForward = Math.min(maxCarryForward, Math.max(0, prevRemaining));
         }
 

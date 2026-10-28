@@ -90,6 +90,45 @@ export class CasualLeaveRepository extends BaseRepository<
         });
     }
 
+    // ─── Earned leave ─────────────────────────────────────────────
+
+    async countEarned(employeeId: number, year: number) {
+        return this.prisma.casualLeaveEarning.count({ where: { employeeId, year } });
+    }
+
+    async countEarnedByEmployee(employeeIds: number[], year: number) {
+        const rows = await this.prisma.casualLeaveEarning.groupBy({
+            by: ['employeeId'],
+            where: { employeeId: { in: employeeIds }, year },
+            _count: { _all: true },
+        });
+        return new Map(rows.map((r) => [r.employeeId, r._count._all]));
+    }
+
+    async createEarning(employeeId: number, date: Date, source: string) {
+        // unique (employeeId, date) makes this idempotent
+        return this.prisma.casualLeaveEarning.upsert({
+            where: { employeeId_date: { employeeId, date } },
+            create: { employeeId, date, year: date.getUTCFullYear(), source },
+            update: {},
+        });
+    }
+
+    async deleteEarning(employeeId: number, date: Date) {
+        return this.prisma.casualLeaveEarning.deleteMany({ where: { employeeId, date } });
+    }
+
+    async updateBalance(
+        employeeId: number,
+        year: number,
+        data: { usedDays?: number; carryForwardDays?: number },
+    ) {
+        return this.prisma.casualLeaveBalance.update({
+            where: { employeeId_year: { employeeId, year } },
+            data,
+        });
+    }
+
     async incrementUsedDays(employeeId: number, year: number, days: number) {
         return this.prisma.casualLeaveBalance.update({
             where: { employeeId_year: { employeeId, year } },

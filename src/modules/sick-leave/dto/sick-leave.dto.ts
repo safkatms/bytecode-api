@@ -1,9 +1,35 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-    IsDateString, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, MaxLength,
+    IsDateString, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, MaxLength, Min,
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
+
+export class SickLeaveBalanceFilterDto extends PaginationDto {
+    @ApiPropertyOptional({ example: 2026, description: 'Defaults to the current year' })
+    @IsOptional()
+    @IsInt()
+    @Min(2000)
+    @Type(() => Number)
+    year?: number;
+}
+
+export class AdjustSickLeaveBalanceDto {
+    @ApiProperty({ example: 2026 })
+    @IsInt()
+    @Min(2000)
+    @Type(() => Number)
+    year: number;
+
+    @ApiProperty({
+        example: 3,
+        description: 'Total sick days already used in this year (overwrites current usedDays)',
+    })
+    @IsInt()
+    @Min(0)
+    @Type(() => Number)
+    usedDays: number;
+}
 
 export class ApplySickLeaveDto {
     @ApiProperty({ example: '2026-10-15', description: 'Start date (YYYY-MM-DD)' })

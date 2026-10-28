@@ -56,6 +56,48 @@ export class SetCasualLeavePolicyDto {
     maxCarryForward: number;
 }
 
+export class CasualLeaveBalanceFilterDto extends PaginationDto {
+    @ApiPropertyOptional({ example: 2026, description: 'Defaults to the current year' })
+    @IsOptional()
+    @IsInt()
+    @Min(2000)
+    @Type(() => Number)
+    year?: number;
+}
+
+export class BackfillEarnedLeaveDto {
+    @ApiProperty({ example: 2026 })
+    @IsInt()
+    @Min(2000)
+    @Type(() => Number)
+    year: number;
+}
+
+export class AdjustCasualLeaveBalanceDto {
+    @ApiProperty({ example: 2026 })
+    @IsInt()
+    @Min(2000)
+    @Type(() => Number)
+    year: number;
+
+    @ApiPropertyOptional({
+        example: 4,
+        description: 'Total casual days already used in this year (overwrites current usedDays)',
+    })
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    @Type(() => Number)
+    usedDays?: number;
+
+    @ApiPropertyOptional({ example: 2, description: 'Carry-forward days from the previous year' })
+    @IsOptional()
+    @IsInt()
+    @Min(0)
+    @Type(() => Number)
+    carryForwardDays?: number;
+}
+
 export class AdminMarkCasualLeaveDto {
     @ApiProperty({ example: 1, description: 'Employee ID' })
     @IsInt()

@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { PaginatedResponse } from '../../common/response/paginated-response';
 import { SickLeaveRepository } from './sick-leave.repository';
-import { AdminMarkSickLeaveDto, ApplySickLeaveDto, ReviewSickLeaveDto, SetSickLeavePolicyDto, SickLeaveFilterDto } from './dto/sick-leave.dto';
+import { AdjustSickLeaveBalanceDto, AdminMarkSickLeaveDto, ApplySickLeaveDto, ReviewSickLeaveDto, SetSickLeavePolicyDto, SickLeaveBalanceFilterDto, SickLeaveFilterDto } from './dto/sick-leave.dto';
 import {
     BadRequestException, ConflictException, ForbiddenException, NotFoundException,
 } from '../../common/exceptions/app.exception';
@@ -259,6 +261,78 @@ export class SickLeaveService {
                 ? balance.totalDays - balance.usedDays
                 : (policy?.totalDays ?? null),
         };
+    }
+
+    /** Opening-balance correction: overwrite usedDays for leave taken before the app was in use. */
+    async adjustBalance(employeeId: number, dto: AdjustSickLeaveBalanceDto) {
+        const policy = await this.repo.getActivePolicyYear(dto.year);
+        if (!policy) {
+            throw new BadRequestException(`No sick leave policy defined for ${dto.year}`);
+        }
+
+        const employee = await this.prisma.employee.findFirst({
+            where: { id: employeeId, deletedAt: null, recordStatus: 'active' },
+        });
+        if (!employee) throw new NotFoundException('Employee');
+
+        const balance = await this.repo.upsertBalance(employeeId, dto.year, policy.totalDays);
+        if (dto.usedDays > balance.totalDays) {
+            throw new BadRequestException(
+                `usedDays (${dto.usedDays}) cannot exceed total entitlement (${balance.totalDays})`,
+            );
+        }
+
+        await this.repo.setUsedDays(employeeId, dto.year, dto.usedDays);
+        return this.getEmployeeBalance(employeeId, dto.year);
+    }
+
+    /** Paginated sick leave balances for all active employees (read-only, creates no rows). */
+    async listBalances(filter: SickLeaveBalanceFilterDto) {
+        const { page = 1, limit = 10, search } = filter;
+        const year = filter.year ?? new Date().getFullYear();
+
+        const where: Prisma.EmployeeWhereInput = {
+            deletedAt: null,
+            recordStatus: 'active',
+            ...(search && {
+                OR: [
+                    { employeeCode: { contains: search, mode: 'insensitive' } },
+                    { user: { firstName: { contains: search, mode: 'insensitive' } } },
+                    { user: { lastName: { contains: search, mode: 'insensitive' } } },
+                    { user: { email: { contains: search, mode: 'insensitive' } } },
+                ],
+            }),
+        };
+
+        const [employees, total, policy] = await Promise.all([
+            this.prisma.employee.findMany({
+                where, skip: filter.skip, take: limit,
+                orderBy: { employeeCode: 'asc' },
+                select: {
+                    id: true, employeeCode: true, designation: true,
+                    user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                },
+            }),
+            this.prisma.employee.count({ where }),
+            this.repo.getActivePolicyYear(year),
+        ]);
+
+        const balances = await this.prisma.sickLeaveBalance.findMany({
+            where: { employeeId: { in: employees.map((e) => e.id) }, year },
+        });
+        const balanceMap = new Map(balances.map((b) => [b.employeeId, b]));
+
+        const data = employees.map((employee) => {
+            const balance = balanceMap.get(employee.id);
+            const totalDays = balance?.totalDays ?? policy?.totalDays ?? null;
+            const usedDays = balance?.usedDays ?? 0;
+            return {
+                employee, year, totalDays, usedDays,
+                remainingDays: totalDays !== null ? totalDays - usedDays : null,
+            };
+        });
+
+        return new PaginatedResponse(data, total, page, limit);
     }
 
     async listRequests(filter: SickLeaveFilterDto) {
