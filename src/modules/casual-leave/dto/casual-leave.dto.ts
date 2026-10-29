@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-    IsDateString, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, MaxLength, Min,
+    IsBoolean, IsDateString, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, MaxLength, Min,
 } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
@@ -82,17 +82,17 @@ export class AdjustCasualLeaveBalanceDto {
 
     @ApiPropertyOptional({
         example: 4,
-        description: 'Total casual days already used in this year (overwrites current usedDays)',
+        description: 'Total casual days already used in this year (overwrites current usedDays). Accepts .5 for half-days',
     })
     @IsOptional()
-    @IsInt()
+    @IsNumber()
     @Min(0)
     @Type(() => Number)
     usedDays?: number;
 
     @ApiPropertyOptional({ example: 2, description: 'Carry-forward days from the previous year' })
     @IsOptional()
-    @IsInt()
+    @IsNumber()
     @Min(0)
     @Type(() => Number)
     carryForwardDays?: number;
@@ -115,6 +115,11 @@ export class AdminMarkCasualLeaveDto {
     @IsString()
     @MaxLength(500)
     note?: string;
+
+    @ApiPropertyOptional({ example: false, description: 'Mark as a half day (deducts 0.5 instead of 1 day)' })
+    @IsOptional()
+    @IsBoolean()
+    isHalfDay?: boolean;
 }
 
 export class CasualLeaveFilterDto extends PaginationDto {

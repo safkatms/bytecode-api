@@ -472,9 +472,9 @@ model CasualLeaveBalance {
   id               Int      @id @default(autoincrement())
   employeeId       Int      @map("employee_id")
   year             Int
-  allocatedDays    Int      @map("allocated_days")   // base from policy
-  carryForwardDays Int      @default(0) @map("carry_forward_days") // brought from previous year
-  usedDays         Int      @default(0) @map("used_days")
+  allocatedDays    Float    @map("allocated_days")   // base from policy
+  carryForwardDays Float    @default(0) @map("carry_forward_days") // brought from previous year
+  usedDays         Float    @default(0) @map("used_days") // supports 0.5 for half-day marks
 
   employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
@@ -504,7 +504,7 @@ model CasualLeaveRequest {
   employeeId  Int                @map("employee_id")
   startDate   DateTime           @map("start_date") @db.Date
   endDate     DateTime           @map("end_date") @db.Date
-  totalDays   Int                @map("total_days")
+  totalDays   Float              @map("total_days") // 0.5 for a half-day request
   reason      String?            @db.VarChar(500)
   status      CasualLeaveStatus  @default(pending)
 

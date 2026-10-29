@@ -22,7 +22,7 @@ export class CasualLeaveAdminController {
     constructor(private readonly casualLeaveService: CasualLeaveService) { }
 
     @Post('mark')
-    @ApiOperation({ summary: 'Directly mark a day as casual leave for an employee' })
+    @ApiOperation({ summary: 'Directly mark a day as casual leave (or half day) for an employee' })
     async markCasualLeave(@Body() dto: AdminMarkCasualLeaveDto, @CurrentUser('id') adminId: number) {
         return ApiResponse.created(
             await this.casualLeaveService.adminMarkCasualLeave(dto, adminId),

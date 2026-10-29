@@ -155,6 +155,8 @@ export class CasualLeaveService {
 
         const date = new Date(dto.date);
         const year = date.getFullYear();
+        const days = dto.isHalfDay ? 0.5 : 1;
+        const attendanceStatus = dto.isHalfDay ? 'half_day' : 'casual_leave';
 
         const policy = await this.repo.getActivePolicyYear(year);
         if (policy) {
@@ -162,7 +164,7 @@ export class CasualLeaveService {
             const balance = await this.repo.findBalance(employee.id, year);
             const earned = await this.repo.countEarned(employee.id, year);
             const remaining = (balance?.allocatedDays ?? 0) + (balance?.carryForwardDays ?? 0) + earned - (balance?.usedDays ?? 0);
-            if (remaining < 1) {
+            if (remaining < days) {
                 throw new BadRequestException(`Employee has no remaining casual leave balance for ${year}`);
             }
         }
@@ -174,7 +176,7 @@ export class CasualLeaveService {
             employeeId: employee.id,
             startDate: date,
             endDate: date,
-            totalDays: 1,
+            totalDays: days,
             reason: dto.note,
             status: 'approved',
             reviewedBy: adminUserId,
@@ -195,7 +197,7 @@ export class CasualLeaveService {
             await this.prisma.attendance.update({
                 where: { id: existing.id },
                 data: {
-                    status: 'casual_leave',
+                    status: attendanceStatus,
                     isManual: true,
                     note: dto.note,
                     casualLeaveRequestId: request.id,
@@ -207,7 +209,7 @@ export class CasualLeaveService {
                 data: {
                     employeeId: employee.id,
                     attendanceDate: date,
-                    status: 'casual_leave',
+                    status: attendanceStatus,
                     isManual: true,
                     note: dto.note,
                     casualLeaveRequestId: request.id,
@@ -218,7 +220,7 @@ export class CasualLeaveService {
         }
 
         if (policy) {
-            await this.repo.incrementUsedDays(employee.id, year, 1);
+            await this.repo.incrementUsedDays(employee.id, year, days);
         }
 
         return request;
