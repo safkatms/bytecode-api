@@ -16,7 +16,7 @@ export class TeamRepository extends BaseRepository<
     }
 
     private get active(): Prisma.TeamWhereInput {
-        return { deletedAt: null, recordStatus: 'active' };
+        return { deletedAt: null, recordStatus: 'active', isActive: true };
     }
 
     private get includeRelations() {
@@ -24,14 +24,14 @@ export class TeamRepository extends BaseRepository<
             leader: {
                 select: {
                     id: true, employeeCode: true, designation: true,
-                    user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, email: true } },
                 },
             },
             members: {
                 where: { deletedAt: null, recordStatus: 'active' },
                 select: {
                     id: true, employeeCode: true, designation: true,
-                    user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, email: true } },
                 },
             },
         } as const;
@@ -81,7 +81,7 @@ export class TeamRepository extends BaseRepository<
                 leader: {
                     select: {
                         id: true, employeeCode: true,
-                        user: { select: { firstName: true, lastName: true } },
+                        user: { select: { firstName: true, lastName: true, avatarUrl: true } },
                     },
                 },
             },

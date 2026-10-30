@@ -32,7 +32,7 @@ export class AttendanceRepository extends BaseRepository<
                 employee: {
                     select: {
                         id: true, employeeCode: true, designation: true,
-                        user: { select: { firstName: true, lastName: true, email: true } }
+                        user: { select: { firstName: true, lastName: true, avatarUrl: true, email: true } }
                     },
                 },
             },
@@ -58,7 +58,7 @@ export class AttendanceRepository extends BaseRepository<
             employee: {
                 select: {
                     id: true, employeeCode: true,
-                    user: { select: { firstName: true, lastName: true } }
+                    user: { select: { firstName: true, lastName: true, avatarUrl: true } }
                 },
             },
         };

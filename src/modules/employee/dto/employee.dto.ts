@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayUnique, IsArray, IsDateString, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayUnique, IsArray, IsDateString, IsEmail, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, Max, MaxLength, Min } from 'class-validator';
 import { PaginationDto } from '../../../common/dto/pagination.dto';
 
 export class CreateEmployeeDto {
@@ -60,6 +60,51 @@ export class CreateEmployeeDto {
     @Min(0, { each: true })
     @Max(6, { each: true })
     weekendDays?: number[];
+
+    // ── Personal details ─────────────────────────────────────────
+    @ApiPropertyOptional({ example: 'Abdul Doe' })
+    @IsOptional()
+    @IsString()
+    @MaxLength(100)
+    fatherName?: string;
+
+    @ApiPropertyOptional({ example: '1995-05-20' })
+    @IsOptional()
+    @IsDateString()
+    dateOfBirth?: string;
+
+    @ApiPropertyOptional({ example: 'O+' })
+    @IsOptional()
+    @IsString()
+    @MaxLength(5)
+    bloodGroup?: string;
+
+    @ApiPropertyOptional({ example: 'john@bytecode.com', description: 'ByteCode/DiziCashier email' })
+    @IsOptional()
+    @IsEmail()
+    officeEmail?: string;
+
+    @ApiPropertyOptional({ example: '+8801800000000' })
+    @IsOptional()
+    @IsString()
+    @MaxLength(30)
+    emergencyContactNo?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    presentAddress?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    permanentAddress?: string;
+
+    @ApiPropertyOptional({ example: '1234567890' })
+    @IsOptional()
+    @IsString()
+    @MaxLength(50)
+    primeBankAccountNo?: string;
 }
 
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {}

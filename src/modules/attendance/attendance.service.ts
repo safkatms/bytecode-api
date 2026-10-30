@@ -16,9 +16,8 @@ export interface MobileContext {
     deviceName: string | null; // X-Device-Name header (optional, e.g. "Samsung Galaxy S24")
 }
 
-const BD_OFFSET = '+06:00';
-// Work starts at 10:00 BD (UTC+6) — anything later is "late"
-const WORK_START_HOUR_UTC = 4; // 10:00 BD = 04:00 UTC
+// Work starts at 10:00 local wall-clock time (stored as-sent) — anything later is "late"
+const WORK_START_HOUR = 10;
 const WORK_START_MINUTE = 0;
 
 @Injectable()
@@ -40,7 +39,7 @@ export class AttendanceService {
         // 1. Validate device (auto-register on first use)
         await this.deviceService.validateAndRegister(employee.id, mobile.deviceId, mobile.deviceName);
 
-        const now = this.parseBdTime(dto.checkInTime);
+        const now = this.parseLocalTime(dto.checkInTime);
         if (isNaN(now.getTime())) throw new BadRequestException('Invalid checkInTime format');
 
         // 2. Check for duplicate
@@ -92,7 +91,7 @@ export class AttendanceService {
         // Device must already be registered
         await this.deviceService.validateAndRegister(employee.id, mobile.deviceId, mobile.deviceName);
 
-        const now = this.parseBdTime(dto.checkOutTime);
+        const now = this.parseLocalTime(dto.checkOutTime);
         if (isNaN(now.getTime())) throw new BadRequestException('Invalid checkOutTime format');
 
         const attendanceDate = this.dateOnly(now);
@@ -228,8 +227,8 @@ export class AttendanceService {
             employeeId: dto.employeeId,
             attendanceDate: date,
             status: dto.status,
-            checkInTime: dto.checkInTime ? new Date(dto.checkInTime) : null,
-            checkOutTime: dto.checkOutTime ? new Date(dto.checkOutTime) : null,
+            checkInTime: dto.checkInTime ? this.parseLocalTime(dto.checkInTime) : null,
+            checkOutTime: dto.checkOutTime ? this.parseLocalTime(dto.checkOutTime) : null,
             workHours,
             lateMinutes: dto.lateMinutes ?? 0,
             note: dto.note,
@@ -249,15 +248,15 @@ export class AttendanceService {
         if (!existing) throw new NotFoundException('Attendance record');
 
         const workHours = this.calcWorkHours(
-            dto.checkInTime ?? existing.checkInTime?.toISOString(),
-            dto.checkOutTime ?? existing.checkOutTime?.toISOString(),
+            dto.checkInTime ?? existing.checkInTime,
+            dto.checkOutTime ?? existing.checkOutTime,
         );
 
         return this.attendanceRepo.update(id, {
             ...dto,
             ...(dto.attendanceDate ? { attendanceDate: new Date(dto.attendanceDate) } : {}),
-            ...(dto.checkInTime ? { checkInTime: new Date(dto.checkInTime) } : {}),
-            ...(dto.checkOutTime ? { checkOutTime: new Date(dto.checkOutTime) } : {}),
+            ...(dto.checkInTime ? { checkInTime: this.parseLocalTime(dto.checkInTime) } : {}),
+            ...(dto.checkOutTime ? { checkOutTime: this.parseLocalTime(dto.checkOutTime) } : {}),
             workHours,
             isManual: true,
             updatedBy: adminId,
@@ -320,10 +319,10 @@ export class AttendanceService {
         return new Date(Date.UTC(bd.getUTCFullYear(), bd.getUTCMonth(), bd.getUTCDate()));
     }
 
-    private parseBdTime(str: string): Date {
-        // If the client omits timezone, treat it as BD time (UTC+6)
-        const hasOffset = /Z$|[+-]\d{2}:\d{2}$/.test(str);
-        return new Date(hasOffset ? str : str + BD_OFFSET);
+    // Keeps the wall-clock digits exactly as sent by the app: any Z/offset is dropped
+    // and the digits are stored as-is (UTC is used only as a neutral container).
+    private parseLocalTime(str: string): Date {
+        return new Date(str.replace(/(Z|[+-]\d{2}:?\d{2})$/, '') + 'Z');
     }
 
     private getWeekRange(anchor: Date): { weekStart: Date; weekEnd: Date } {
@@ -334,12 +333,14 @@ export class AttendanceService {
         return { weekStart, weekEnd };
     }
 
+    // Calendar date of the stored wall-clock time, as UTC midnight
     private dateOnly(d: Date): Date {
         return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     }
 
     private calcLateMinutes(checkIn: Date): number {
-        const deadlineMs = Date.UTC(checkIn.getUTCFullYear(), checkIn.getUTCMonth(), checkIn.getUTCDate(), WORK_START_HOUR_UTC, WORK_START_MINUTE);
+        const day = this.dateOnly(checkIn);
+        const deadlineMs = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), WORK_START_HOUR, WORK_START_MINUTE);
         const diff = checkIn.getTime() - deadlineMs;
         return diff > 0 ? Math.floor(diff / 60_000) : 0;
     }
@@ -349,9 +350,10 @@ export class AttendanceService {
         return diff > 0 ? Math.round((diff / 3_600_000) * 100) / 100 : null;
     }
 
-    private calcWorkHours(checkIn?: string, checkOut?: string): number | null {
+    private calcWorkHours(checkIn?: string | Date | null, checkOut?: string | Date | null): number | null {
         if (!checkIn || !checkOut) return null;
-        const diff = new Date(checkOut).getTime() - new Date(checkIn).getTime();
+        const toDate = (v: string | Date) => (typeof v === 'string' ? this.parseLocalTime(v) : v);
+        const diff = toDate(checkOut).getTime() - toDate(checkIn).getTime();
         return diff > 0 ? Math.round((diff / 3_600_000) * 100) / 100 : null;
     }
 

@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { appConfig, jwtConfig } from './config';
 import { PrismaModule } from './database/prisma.module';
+import { CloudinaryModule } from './common/cloudinary/cloudinary.module';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -31,6 +32,7 @@ import { HolidayModule } from '@modules/holiday/holiday.module';
 
     // PrismaModule is @Global() — PrismaService available everywhere
     PrismaModule,
+    CloudinaryModule,
 
     // Feature modules
     AuthModule,

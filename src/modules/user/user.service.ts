@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import { Prisma, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -18,7 +19,10 @@ export class UserService extends BaseService<
   Prisma.UserWhereInput,
   Prisma.UserOrderByWithRelationInput
 > {
-  constructor(private readonly userRepository: UserRepository) {
+  constructor(
+    private readonly userRepository: UserRepository,
+    private readonly cloudinary: CloudinaryService,
+  ) {
     super(userRepository, 'User');
   }
 
@@ -97,6 +101,14 @@ export class UserService extends BaseService<
 
   async removeUser(id: number): Promise<User> {
     return this.remove(id);
+  }
+
+  async uploadAvatar(userId: number, file: Express.Multer.File): Promise<{ avatarUrl: string }> {
+    if (!file) throw new BadRequestException('Image file is required');
+    await this.findById(userId);
+    const result = await this.cloudinary.uploadImage(file.buffer, 'employee-avatars', `user-${userId}`);
+    await this.userRepository.update(userId, { avatarUrl: result.secure_url, updatedBy: userId });
+    return { avatarUrl: result.secure_url };
   }
 
   async updateProfile(userId: number, dto: UpdateProfileDto): Promise<User> {

@@ -107,31 +107,47 @@ export class DashboardService {
     }
 
     async getAdminRecentActivity(limit = 10) {
-        const records = await this.prisma.attendance.findMany({
-            where: { deletedAt: null, recordStatus: 'active' },
-            orderBy: { updatedAt: 'desc' },
-            take: limit,
-            include: {
-                employee: {
-                    select: {
-                        employeeCode: true, department: true,
-                        user: { select: { firstName: true, lastName: true } },
-                    },
+        const include = {
+            employee: {
+                select: {
+                    employeeCode: true, department: true,
+                    user: { select: { firstName: true, lastName: true, avatarUrl: true } },
                 },
             },
-        });
+        } as const;
+        const base = { deletedAt: null, recordStatus: 'active' } as const;
 
-        return records.map((r) => ({
+        // A record yields up to two events, so take the latest `limit` of each kind and merge.
+        const [checkIns, checkOuts] = await Promise.all([
+            this.prisma.attendance.findMany({
+                where: { ...base, checkInTime: { not: null } },
+                orderBy: { checkInTime: 'desc' }, take: limit, include,
+            }),
+            this.prisma.attendance.findMany({
+                where: { ...base, checkOutTime: { not: null } },
+                orderBy: { checkOutTime: 'desc' }, take: limit, include,
+            }),
+        ]);
+
+        const toEvent = (r: (typeof checkIns)[number], type: 'check_in' | 'check_out', time: Date) => ({
             id: r.id,
+            type,
+            time,
             employee: `${r.employee.user.firstName} ${r.employee.user.lastName}`,
+            avatarUrl: r.employee.user.avatarUrl,
             employeeCode: r.employee.employeeCode,
             department: r.employee.department,
             date: r.attendanceDate,
-            status: r.status,
-            checkInTime: r.checkInTime,
-            checkOutTime: r.checkOutTime,
             isManual: r.isManual,
-        }));
+            ...(type === 'check_in' && { isLate: r.status === AttendanceStatus.late, lateMinutes: r.lateMinutes }),
+        });
+
+        return [
+            ...checkIns.map((r) => toEvent(r, 'check_in', r.checkInTime!)),
+            ...checkOuts.map((r) => toEvent(r, 'check_out', r.checkOutTime!)),
+        ]
+            .sort((a, b) => b.time.getTime() - a.time.getTime())
+            .slice(0, limit);
     }
 
     async getAdminLateReport(month?: string) {
@@ -149,7 +165,7 @@ export class DashboardService {
                 employee: {
                     select: {
                         id: true, employeeCode: true, department: true,
-                        user: { select: { firstName: true, lastName: true } },
+                        user: { select: { firstName: true, lastName: true, avatarUrl: true } },
                     },
                 },
             },
@@ -177,7 +193,13 @@ export class DashboardService {
         const end = this.endOfMonthBd(now);
 
         const [employee, todayRecord, monthlyStats, devices] = await Promise.all([
-            this.prisma.employee.findUnique({ where: { id: employeeId }, select: { weekendDays: true } }),
+            this.prisma.employee.findUnique({
+                where: { id: employeeId },
+                select: {
+                    weekendDays: true, employeeCode: true, designation: true,
+                    user: { select: { firstName: true, lastName: true, avatarUrl: true } },
+                },
+            }),
             this.prisma.attendance.findFirst({
                 where: { employeeId, attendanceDate: today, deletedAt: null, recordStatus: 'active' },
             }),
@@ -204,6 +226,12 @@ export class DashboardService {
         const isWeekend = weekendDays.includes(today.getUTCDay());
 
         return {
+            profile: {
+                name: employee ? `${employee.user.firstName} ${employee.user.lastName}` : null,
+                employeeCode: employee?.employeeCode ?? null,
+                designation: employee?.designation ?? null,
+                avatarUrl: employee?.user.avatarUrl ?? null,
+            },
             today: {
                 checkedIn: !!todayRecord?.checkInTime,
                 checkedOut: !!todayRecord?.checkOutTime,

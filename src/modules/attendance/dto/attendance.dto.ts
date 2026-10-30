@@ -24,7 +24,7 @@ export class CheckInDto {
     @Max(180)
     longitude: number;
 
-    @ApiProperty({ example: '2026-10-10T09:05:00.000Z', description: 'Check-in datetime from device (ISO 8601)' })
+    @ApiProperty({ example: '2026-10-10T09:05:00', description: 'Local check-in datetime from device (ISO 8601, stored exactly as sent)' })
     @IsNotEmpty()
     @IsString()
     checkInTime: string;
@@ -47,7 +47,7 @@ export class CheckOutDto {
     @Max(180)
     longitude: number;
 
-    @ApiProperty({ example: '2026-10-10T18:00:00.000Z', description: 'Check-out datetime from device (ISO 8601)' })
+    @ApiProperty({ example: '2026-10-10T18:00:00', description: 'Local check-out datetime from device (ISO 8601, stored exactly as sent)' })
     @IsNotEmpty()
     @IsString()
     checkOutTime: string;
@@ -72,12 +72,12 @@ export class AdminMarkAttendanceDto {
     @IsEnum(AttendanceStatus)
     status: AttendanceStatus;
 
-    @ApiPropertyOptional({ example: '2024-01-15T09:05:00.000Z' })
+    @ApiPropertyOptional({ example: '2024-01-15T09:05:00' })
     @IsOptional()
     @IsString()
     checkInTime?: string;
 
-    @ApiPropertyOptional({ example: '2024-01-15T18:00:00.000Z' })
+    @ApiPropertyOptional({ example: '2024-01-15T18:00:00' })
     @IsOptional()
     @IsString()
     checkOutTime?: string;

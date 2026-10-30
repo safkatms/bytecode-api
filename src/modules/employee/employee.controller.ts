@@ -1,8 +1,10 @@
 import {
     Body, Controller, Delete, Get, HttpCode, HttpStatus,
-    Param, ParseIntPipe, Patch, Post, Query,
+    Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors, BadRequestException,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { EmployeeService } from './employee.service';
 import { DeviceService } from '../device/device.service';
@@ -51,6 +53,26 @@ export class EmployeeController {
         @CurrentUser('id') adminId: number,
     ) {
         return ApiResponse.ok(await this.employeeService.update(id, dto, adminId), 'Employee updated');
+    }
+
+    @Post(':id/avatar')
+    @Roles(Role.admin)
+    @ApiConsumes('multipart/form-data')
+    @ApiOperation({ summary: 'Upload employee profile image, form field "file" (Admin)' })
+    @UseInterceptors(FileInterceptor('file', {
+        storage: memoryStorage(),
+        limits: { fileSize: 2 * 1024 * 1024 },
+        fileFilter: (_req, file, cb) =>
+            /^image\/(jpe?g|png|webp)$/.test(file.mimetype)
+                ? cb(null, true)
+                : cb(new BadRequestException('Only jpg, png or webp images are allowed'), false),
+    }))
+    async uploadAvatar(
+        @Param('id', ParseIntPipe) id: number,
+        @UploadedFile() file: Express.Multer.File,
+        @CurrentUser('id') adminId: number,
+    ) {
+        return ApiResponse.ok(await this.employeeService.uploadAvatar(id, file, adminId), 'Profile image updated');
     }
 
     @Patch(':id/toggle-active')

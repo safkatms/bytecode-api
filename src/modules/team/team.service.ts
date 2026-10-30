@@ -86,6 +86,7 @@ export class TeamService {
     async remove(id: number, adminId: number) {
         await this.findById(id);
         await this.teamRepo.update(id, {
+            Active: false,
             deletedAt: new Date(),
             deletedBy: adminId,
             recordStatus: 'deleted',

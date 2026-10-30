@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { UserService } from '../user/user.service';
 import { DepartmentService } from '../department/department.service';
 import { EmployeeRepository } from './employee.repository';
 import { CreateEmployeeDto, EmployeeFilterDto, UpdateEmployeeDto } from './dto/employee.dto';
 import { ConflictException, NotFoundException } from '../../common/exceptions/app.exception';
+import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -14,7 +15,29 @@ export class EmployeeService {
         private readonly employeeRepo: EmployeeRepository,
         private readonly userService: UserService,
         private readonly departmentService: DepartmentService,
+        private readonly cloudinary: CloudinaryService,
     ) { }
+
+    private personalData(dto: Partial<CreateEmployeeDto>) {
+        return {
+            ...(dto.fatherName !== undefined && { fatherName: dto.fatherName }),
+            ...(dto.dateOfBirth && { dateOfBirth: new Date(dto.dateOfBirth) }),
+            ...(dto.bloodGroup !== undefined && { bloodGroup: dto.bloodGroup }),
+            ...(dto.officeEmail !== undefined && { officeEmail: dto.officeEmail }),
+            ...(dto.emergencyContactNo !== undefined && { emergencyContactNo: dto.emergencyContactNo }),
+            ...(dto.presentAddress !== undefined && { presentAddress: dto.presentAddress }),
+            ...(dto.permanentAddress !== undefined && { permanentAddress: dto.permanentAddress }),
+            ...(dto.primeBankAccountNo !== undefined && { primeBankAccountNo: dto.primeBankAccountNo }),
+        };
+    }
+
+    async uploadAvatar(id: number, file: Express.Multer.File, adminId: number) {
+        if (!file) throw new BadRequestException('Image file is required');
+        const emp = await this.findById(id);
+        const result = await this.cloudinary.uploadImage(file.buffer, 'employee-avatars', `user-${emp.userId}`);
+        await this.userService.update(emp.userId, { avatarUrl: result.secure_url, updatedBy: adminId });
+        return { avatarUrl: result.secure_url };
+    }
 
     /**
      * Creates a User account and Employee profile atomically.
@@ -58,6 +81,7 @@ export class EmployeeService {
                     designation: dto.designation,
                     joiningDate: new Date(dto.joiningDate),
                     weekendDays: dto.weekendDays ?? [5, 6],
+                    ...this.personalData(dto),
                     createdBy: adminId,
                     updatedBy: adminId,
                 },
@@ -99,6 +123,11 @@ export class EmployeeService {
         }
         if (dto.departmentId) await this.departmentService.findById(dto.departmentId);
 
+        if (dto.officeEmail) {
+            const dup = await this.prisma.employee.findFirst({ where: { officeEmail: dto.officeEmail, id: { not: id } } });
+            if (dup) throw new ConflictException('Office email already in use');
+        }
+
         // Update user fields if provided
         const userFields = ['firstName', 'lastName', 'email', 'phone'] as const;
         const hasUserUpdate = userFields.some((f) => dto[f] !== undefined);
@@ -125,6 +154,7 @@ export class EmployeeService {
             ...(dto.designation !== undefined && { designation: dto.designation }),
             ...(dto.joiningDate && { joiningDate: new Date(dto.joiningDate) }),
             ...(dto.weekendDays !== undefined && { weekendDays: dto.weekendDays }),
+            ...this.personalData(dto),
             updatedBy: adminId,
         });
     }

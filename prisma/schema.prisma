@@ -204,6 +204,16 @@ model Employee {
   isActive        Boolean      @default(true) @map("is_active")
   weekendDays     Int[]        @default([5, 6]) @map("weekend_days") // 0=Sun…6=Sat; default: Fri+Sat
 
+  // personal details
+  fatherName         String?   @map("father_name") @db.VarChar(100)
+  dateOfBirth        DateTime? @map("date_of_birth") @db.Date
+  bloodGroup         String?   @map("blood_group") @db.VarChar(5)
+  officeEmail        String?   @unique @map("office_email") @db.VarChar(255) // ByteCode/DiziCashier email
+  emergencyContactNo String?   @map("emergency_contact_no") @db.VarChar(30)
+  presentAddress     String?   @map("present_address")
+  permanentAddress   String?   @map("permanent_address")
+  primeBankAccountNo String?   @map("prime_bank_account_no") @db.VarChar(50)
+
   // audit trail
   createdAt       DateTime     @default(now()) @map("created_at")
   createdBy       Int          @map("created_by")

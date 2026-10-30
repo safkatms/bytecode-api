@@ -24,7 +24,7 @@ export class CasualLeaveRepository extends BaseRepository<
             employee: {
                 select: {
                     id: true, employeeCode: true, designation: true,
-                    user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, email: true } },
                 },
             },
         } as const;

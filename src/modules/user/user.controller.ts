@@ -10,8 +10,13 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { UserService } from './user.service';
 import { CreateUserDto, UpdateProfileDto, UpdateUserDto } from './dto/user.dto';
@@ -74,6 +79,25 @@ export class UserController {
     const user = await this.userService.updateProfile(userId, dto);
     const { password, refreshToken, ...safe } = user;
     return ApiResponse.ok(safe, 'Profile updated successfully');
+  }
+
+  @Post('me/avatar')
+  @Roles(Role.admin, Role.user)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload own profile image, form field "file" (all users)' })
+  @UseInterceptors(FileInterceptor('file', {
+    storage: memoryStorage(),
+    limits: { fileSize: 2 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) =>
+      /^image\/(jpe?g|png|webp)$/.test(file.mimetype)
+        ? cb(null, true)
+        : cb(new BadRequestException('Only jpg, png or webp images are allowed'), false),
+  }))
+  async uploadMyAvatar(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser('id') userId: number,
+  ) {
+    return ApiResponse.ok(await this.userService.uploadAvatar(userId, file), 'Profile image updated');
   }
 
   @Patch(':id')

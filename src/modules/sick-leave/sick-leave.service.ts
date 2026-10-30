@@ -238,7 +238,7 @@ export class SickLeaveService {
             where: { id: employeeId, deletedAt: null, recordStatus: 'active' },
             select: {
                 id: true, employeeCode: true, designation: true,
-                user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, email: true } },
             },
         });
         if (!employee) throw new NotFoundException('Employee');
@@ -310,7 +310,7 @@ export class SickLeaveService {
                 orderBy: { employeeCode: 'asc' },
                 select: {
                     id: true, employeeCode: true, designation: true,
-                    user: { select: { id: true, firstName: true, lastName: true, email: true } },
+                    user: { select: { id: true, firstName: true, lastName: true, avatarUrl: true, email: true } },
                 },
             }),
             this.prisma.employee.count({ where }),

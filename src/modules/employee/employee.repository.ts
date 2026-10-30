@@ -21,7 +21,7 @@ export class EmployeeRepository extends BaseRepository<
 
     private get includeRelations() {
         return {
-            user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+            user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, avatarUrl: true } },
             department: { select: { id: true, name: true } },
         } as const;
     }

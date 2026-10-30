@@ -26,7 +26,7 @@ export class HolidayRepository extends BaseRepository<
                     employee: {
                         select: {
                             id: true, employeeCode: true,
-                            user: { select: { firstName: true, lastName: true } },
+                            user: { select: { firstName: true, lastName: true, avatarUrl: true } },
                         },
                     },
                     team: { select: { id: true, name: true } },
