@@ -6,6 +6,7 @@ import { EmployeeRepository } from './employee.repository';
 import { CreateEmployeeDto, EmployeeFilterDto, UpdateEmployeeDto } from './dto/employee.dto';
 import { ConflictException, NotFoundException } from '../../common/exceptions/app.exception';
 import { CloudinaryService } from '../../common/cloudinary/cloudinary.service';
+import { MailService } from '../../common/mail/mail.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class EmployeeService {
         private readonly userService: UserService,
         private readonly departmentService: DepartmentService,
         private readonly cloudinary: CloudinaryService,
+        private readonly mail: MailService,
     ) { }
 
     private personalData(dto: Partial<CreateEmployeeDto>) {
@@ -93,9 +95,13 @@ export class EmployeeService {
         // Strip sensitive fields before returning
         const { password, refreshToken, passwordResetToken, ...safeUser } = user;
 
-        console.log(`[DEV] Temp password for ${user.email}: ${plainPassword}`);
+        const emailSent = await this.mail.sendAccountCreated(
+            user.email,
+            `${user.firstName} ${user.lastName}`.trim(),
+            plainPassword,
+        );
 
-        return { user: safeUser, employee, temporaryPassword: plainPassword };
+        return { user: safeUser, employee, temporaryPassword: plainPassword, emailSent };
     }
 
     async findAll(filter: EmployeeFilterDto) {
