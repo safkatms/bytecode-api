@@ -39,6 +39,7 @@
     "class-validator": "^0.14.0",
     "cloudinary": "^2.11.0",
     "date-fns": "^4.4.0",
+    "exceljs": "^4.4.0",
     "multer": "^2.2.0",
     "nodemailer": "^10.3.1",
     "passport": "^0.6.0",

@@ -22,6 +22,8 @@ import { TeamModule } from '@modules/team/team.module';
 import { SickLeaveModule } from '@modules/sick-leave/sick-leave.module';
 import { CasualLeaveModule } from '@modules/casual-leave/casual-leave.module';
 import { HolidayModule } from '@modules/holiday/holiday.module';
+import { ReportModule } from '@modules/report/report.module';
+import { NotificationModule } from '@modules/notification/notification.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { HolidayModule } from '@modules/holiday/holiday.module';
     MailModule,
 
     // Feature modules
+    NotificationModule,
+    ReportModule,
     AuthModule,
     UserModule,
     AttendanceModule,

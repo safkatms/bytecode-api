@@ -4,6 +4,7 @@ import { AttendanceRepository } from './attendance.repository';
 import { EmployeeRepository } from '../employee/employee.repository';
 import { DeviceService } from '../device/device.service';
 import { CasualLeaveService } from '../casual-leave/casual-leave.service';
+import { NotificationService } from '../notification/notification.service';
 import {
     AdminMarkAttendanceDto, AdminUpdateAttendanceDto,
     AttendanceFilterDto, CheckInDto, CheckOutDto, MonthlySummaryDto, WeeklyTimesheetDto,
@@ -27,6 +28,7 @@ export class AttendanceService {
         private readonly employeeRepo: EmployeeRepository,
         private readonly deviceService: DeviceService,
         private readonly casualLeaveService: CasualLeaveService,
+        private readonly notifications: NotificationService,
     ) { }
 
     // ─── Employee: Check In ───────────────────────────────────────
@@ -240,6 +242,12 @@ export class AttendanceService {
         if (dto.checkInTime) {
             await this.casualLeaveService.grantEarnedLeaveForWorkedDay(employee.id, date);
         }
+        void this.notifications.notifyEmployees([employee.id], {
+            type: 'attendance_marked',
+            title: 'Attendance recorded',
+            body: `Admin marked your attendance for ${dto.attendanceDate.slice(0, 10)} as ${dto.status}.`,
+            data: { attendanceId: created.id, date: dto.attendanceDate.slice(0, 10) },
+        });
         return created;
     }
 
@@ -252,7 +260,7 @@ export class AttendanceService {
             dto.checkOutTime ?? existing.checkOutTime,
         );
 
-        return this.attendanceRepo.update(id, {
+        const updated = await this.attendanceRepo.update(id, {
             ...dto,
             ...(dto.attendanceDate ? { attendanceDate: new Date(dto.attendanceDate) } : {}),
             ...(dto.checkInTime ? { checkInTime: this.parseLocalTime(dto.checkInTime) } : {}),
@@ -261,6 +269,13 @@ export class AttendanceService {
             isManual: true,
             updatedBy: adminId,
         });
+        void this.notifications.notifyEmployees([existing.employeeId], {
+            type: 'attendance_updated',
+            title: 'Attendance updated',
+            body: `Admin updated your attendance for ${new Date(updated.attendanceDate).toISOString().slice(0, 10)}.`,
+            data: { attendanceId: id },
+        });
+        return updated;
     }
 
     async adminFindMany(filter: AttendanceFilterDto) {
@@ -309,6 +324,12 @@ export class AttendanceService {
         if (record.checkInTime) {
             await this.casualLeaveService.revokeEarnedLeave(record.employeeId, record.attendanceDate);
         }
+        void this.notifications.notifyEmployees([record.employeeId], {
+            type: 'attendance_removed',
+            title: 'Attendance removed',
+            body: `Admin removed your attendance record for ${new Date(record.attendanceDate).toISOString().slice(0, 10)}.`,
+            data: { attendanceId: id },
+        });
     }
 
     // ─── Helpers ──────────────────────────────────────────────────

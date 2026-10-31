@@ -114,6 +114,8 @@ model User {
   // relations
   employee        Employee?
   sessions            UserSession[]
+  notifications       Notification[]
+  pushTokens          PushToken[]
   auditLogs        AuditLog[]   @relation("ActorLogs")
   @@map("users")
 }
@@ -572,4 +574,51 @@ model AuditLog {
   @@index([actorId,    occurredAt(sort: Desc)])
   @@index([targetType, targetId])
   @@map("audit_logs")
+}
+// ─── Notifications ────────────────────────────────────────────
+
+enum NotificationType {
+  leave_request_submitted
+  leave_request_cancelled
+  leave_request_reviewed
+  leave_marked_by_admin
+  holiday_created
+  holiday_updated
+  holiday_removed
+  attendance_marked
+  attendance_updated
+  attendance_removed
+  announcement
+}
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int              @map("user_id")
+  type      NotificationType
+  title     String           @db.VarChar(200)
+  body      String           @db.VarChar(1000)
+  data      Json?
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model PushToken {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  token      String   @unique @db.VarChar(255) // ExponentPushToken[...]
+  platform   String?  @db.VarChar(20)
+  deviceId   String?  @map("device_id") @db.VarChar(255)
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastUsedAt DateTime @default(now()) @map("last_used_at")
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
 }

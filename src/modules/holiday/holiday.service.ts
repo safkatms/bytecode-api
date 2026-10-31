@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { HolidayRepository } from './holiday.repository';
+import { NotificationService } from '../notification/notification.service';
 import { CreateHolidayDto, HolidayFilterDto, UpdateHolidayDto } from './dto/holiday.dto';
 import { BadRequestException, ConflictException, NotFoundException } from '../../common/exceptions/app.exception';
 
@@ -9,6 +10,7 @@ export class HolidayService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly repo: HolidayRepository,
+        private readonly notifications: NotificationService,
     ) { }
 
     async create(dto: CreateHolidayDto, adminId: number) {
@@ -37,6 +39,7 @@ export class HolidayService {
 
         await this.applyAttendanceEntries(holiday.id, startDate, endDate, adminId);
 
+        void this.notifyHoliday(holiday.id, 'holiday_created', 'New holiday', holiday.name, startDate, endDate);
         return this.repo.findById(holiday.id);
     }
 
@@ -78,6 +81,7 @@ export class HolidayService {
             await this.applyAttendanceEntries(id, newStart, newEnd, adminId);
         }
 
+        void this.notifyHoliday(id, 'holiday_updated', 'Holiday updated', dto.name ?? holiday.name, newStart, newEnd);
         return this.repo.findById(id);
     }
 
@@ -87,12 +91,15 @@ export class HolidayService {
 
         await this.prisma.attendance.deleteMany({ where: { holidayId: id } });
 
-        return this.repo.update(id, {
+        const removed = await this.repo.update(id, {
             deletedAt: new Date(),
             deletedBy: adminId,
             recordStatus: 'deleted',
             updatedBy: adminId,
         });
+
+        void this.notifyHoliday(id, 'holiday_removed', 'Holiday cancelled', holiday.name, holiday.startDate, holiday.endDate);
+        return removed;
     }
 
     async findAll(filter: HolidayFilterDto) {
@@ -106,6 +113,43 @@ export class HolidayService {
     }
 
     // ─── Helpers ──────────────────────────────────────────────────
+
+    /** Notifies every active employee who is not excluded from this holiday. */
+    private async notifyHoliday(
+        holidayId: number,
+        type: 'holiday_created' | 'holiday_updated' | 'holiday_removed',
+        title: string,
+        name: string,
+        start: Date,
+        end: Date,
+    ) {
+        try {
+            const exclusions = await this.prisma.holidayExclusion.findMany({
+                where: { holidayId },
+                include: { team: { select: { members: { select: { id: true } } } } },
+            });
+            const excluded = new Set<number>();
+            for (const ex of exclusions) {
+                if (ex.employeeId) excluded.add(ex.employeeId);
+                if (ex.team) ex.team.members.forEach((m) => excluded.add(m.id));
+            }
+
+            const employees = await this.prisma.employee.findMany({
+                where: { deletedAt: null, recordStatus: 'active', isActive: true },
+                select: { id: true },
+            });
+
+            const ymd = (d: Date) => new Date(d).toISOString().slice(0, 10);
+            const range = ymd(start) === ymd(end) ? ymd(start) : `${ymd(start)} to ${ymd(end)}`;
+
+            await this.notifications.notifyEmployees(
+                employees.map((e) => e.id).filter((id) => !excluded.has(id)),
+                { type, title, body: `${name} (${range})`, data: { holidayId } },
+            );
+        } catch {
+            // notifications are best-effort
+        }
+    }
 
     /**
      * Creates attendance entries (status=holiday) for every active employee

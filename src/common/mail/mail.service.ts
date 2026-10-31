@@ -31,10 +31,20 @@ export class MailService {
     }
 
     /** Never throws — a mail failure must not break the calling flow. Returns true if sent. */
-    async send(to: string, subject: string, html: string, text?: string): Promise<boolean> {
+    get enabled(): boolean {
+        return this.transporter !== null;
+    }
+
+    async send(
+        to: string,
+        subject: string,
+        html: string,
+        text?: string,
+        attachments?: nodemailer.SendMailOptions['attachments'],
+    ): Promise<boolean> {
         if (!this.transporter) return false;
         try {
-            await this.transporter.sendMail({ from: this.from, replyTo: this.from, to, subject, html, text });
+            await this.transporter.sendMail({ from: this.from, replyTo: this.from, to, subject, html, text, attachments });
             return true;
         } catch (err) {
             this.logger.error(`Failed to send mail to ${to}: ${(err as Error).message}`);

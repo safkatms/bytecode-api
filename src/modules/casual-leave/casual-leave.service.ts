@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PaginatedResponse } from '../../common/response/paginated-response';
 import { PrismaService } from '../../database/prisma.service';
 import { CasualLeaveRepository } from './casual-leave.repository';
+import { NotificationService } from '../notification/notification.service';
 import {
     AdjustCasualLeaveBalanceDto, AdminMarkCasualLeaveDto, ApplyCasualLeaveDto,
     CasualLeaveBalanceFilterDto, CasualLeaveFilterDto,
@@ -17,6 +18,7 @@ export class CasualLeaveService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly repo: CasualLeaveRepository,
+        private readonly notifications: NotificationService,
     ) { }
 
     // ─── Policy ───────────────────────────────────────────────────
@@ -69,7 +71,7 @@ export class CasualLeaveService {
         const overlap = await this.repo.findOverlapping(employee.id, start, end);
         if (overlap) throw new ConflictException('You already have a casual leave request overlapping these dates');
 
-        return this.repo.create({
+        const request = await this.repo.create({
             employeeId: employee.id,
             startDate: start,
             endDate: end,
@@ -79,6 +81,29 @@ export class CasualLeaveService {
             createdBy: employee.userId,
             updatedBy: employee.userId,
         });
+
+        void this.notifyAdminsOfRequest('leave_request_submitted', 'New casual leave request', 'requested', employee.userId, request);
+        return request;
+    }
+
+    private async notifyAdminsOfRequest(
+        type: 'leave_request_submitted' | 'leave_request_cancelled',
+        title: string,
+        verb: string,
+        userId: number,
+        request: { id: number; startDate: Date; endDate: Date; totalDays: number },
+    ) {
+        const name = await this.notifications.displayName(userId);
+        await this.notifications.notifyAdmins({
+            type,
+            title,
+            body: `${name} ${verb} ${request.totalDays} day(s) of casual leave (${this.ymd(request.startDate)} to ${this.ymd(request.endDate)})`,
+            data: { kind: 'casual', requestId: request.id },
+        });
+    }
+
+    private ymd(d: Date) {
+        return new Date(d).toISOString().slice(0, 10);
     }
 
     async cancelRequest(userId: number, requestId: number) {
@@ -91,7 +116,9 @@ export class CasualLeaveService {
             throw new BadRequestException('Only pending requests can be cancelled');
         }
 
-        return this.repo.update(requestId, { status: 'cancelled', updatedBy: employee.userId });
+        const updated = await this.repo.update(requestId, { status: 'cancelled', updatedBy: employee.userId });
+        void this.notifyAdminsOfRequest('leave_request_cancelled', 'Casual leave request cancelled', 'cancelled their request for', employee.userId, request);
+        return updated;
     }
 
     async getMyRequests(userId: number, filter: CasualLeaveFilterDto) {
@@ -138,13 +165,22 @@ export class CasualLeaveService {
             await this.repo.incrementUsedDays(request.employeeId, year, request.totalDays);
         }
 
-        return this.repo.update(requestId, {
+        const updated = await this.repo.update(requestId, {
             status: dto.action,
             reviewedBy: adminUserId,
             reviewedAt: new Date(),
             reviewNote: dto.reviewNote,
             updatedBy: adminUserId,
         });
+
+        void this.notifications.notifyEmployees([request.employeeId], {
+            type: 'leave_request_reviewed',
+            title: `Casual leave ${dto.action}`,
+            body: `Your casual leave (${this.ymd(request.startDate)} to ${this.ymd(request.endDate)}) was ${dto.action}.${dto.reviewNote ? ` Note: ${dto.reviewNote}` : ''}`,
+            data: { kind: 'casual', requestId: request.id, status: dto.action },
+            email: true,
+        });
+        return updated;
     }
 
     async adminMarkCasualLeave(dto: AdminMarkCasualLeaveDto, adminUserId: number) {
@@ -223,6 +259,12 @@ export class CasualLeaveService {
             await this.repo.incrementUsedDays(employee.id, year, days);
         }
 
+        void this.notifications.notifyEmployees([employee.id], {
+            type: 'leave_marked_by_admin',
+            title: dto.isHalfDay ? 'Half-day casual leave recorded' : 'Casual leave recorded',
+            body: `Admin marked you on ${dto.isHalfDay ? 'half-day ' : ''}casual leave for ${this.ymd(date)}.`,
+            data: { kind: 'casual', requestId: request.id },
+        });
         return request;
     }
 

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { PaginatedResponse } from '../../common/response/paginated-response';
 import { SickLeaveRepository } from './sick-leave.repository';
+import { NotificationService } from '../notification/notification.service';
 import { AdjustSickLeaveBalanceDto, AdminMarkSickLeaveDto, ApplySickLeaveDto, ReviewSickLeaveDto, SetSickLeavePolicyDto, SickLeaveBalanceFilterDto, SickLeaveFilterDto } from './dto/sick-leave.dto';
 import {
     BadRequestException, ConflictException, ForbiddenException, NotFoundException,
@@ -13,6 +14,7 @@ export class SickLeaveService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly repo: SickLeaveRepository,
+        private readonly notifications: NotificationService,
     ) { }
 
     // ─── Policy ───────────────────────────────────────────────────
@@ -66,7 +68,7 @@ export class SickLeaveService {
         const overlap = await this.repo.findOverlapping(employee.id, start, end);
         if (overlap) throw new ConflictException('You already have a sick leave request overlapping these dates');
 
-        return this.repo.create({
+        const request = await this.repo.create({
             employeeId: employee.id,
             startDate: start,
             endDate: end,
@@ -76,6 +78,29 @@ export class SickLeaveService {
             createdBy: employee.userId,
             updatedBy: employee.userId,
         });
+
+        void this.notifyAdminsOfRequest('leave_request_submitted', 'New sick leave request', 'requested', employee.userId, request);
+        return request;
+    }
+
+    private async notifyAdminsOfRequest(
+        type: 'leave_request_submitted' | 'leave_request_cancelled',
+        title: string,
+        verb: string,
+        userId: number,
+        request: { id: number; startDate: Date; endDate: Date; totalDays: number },
+    ) {
+        const name = await this.notifications.displayName(userId);
+        await this.notifications.notifyAdmins({
+            type,
+            title,
+            body: `${name} ${verb} ${request.totalDays} day(s) of sick leave (${this.ymd(request.startDate)} to ${this.ymd(request.endDate)})`,
+            data: { kind: 'sick', requestId: request.id },
+        });
+    }
+
+    private ymd(d: Date) {
+        return new Date(d).toISOString().slice(0, 10);
     }
 
     async cancelRequest(userId: number, requestId: number) {
@@ -88,7 +113,9 @@ export class SickLeaveService {
             throw new BadRequestException('Only pending requests can be cancelled');
         }
 
-        return this.repo.update(requestId, { status: 'cancelled', updatedBy: employee.userId });
+        const updated = await this.repo.update(requestId, { status: 'cancelled', updatedBy: employee.userId });
+        void this.notifyAdminsOfRequest('leave_request_cancelled', 'Sick leave request cancelled', 'cancelled their request for', employee.userId, request);
+        return updated;
     }
 
     async getMyRequests(userId: number, filter: SickLeaveFilterDto) {
@@ -141,13 +168,22 @@ export class SickLeaveService {
             await this.repo.incrementUsedDays(request.employeeId, year, request.totalDays);
         }
 
-        return this.repo.update(requestId, {
+        const updated = await this.repo.update(requestId, {
             status: dto.action,
             reviewedBy: adminUserId,
             reviewedAt: new Date(),
             reviewNote: dto.reviewNote,
             updatedBy: adminUserId,
         });
+
+        void this.notifications.notifyEmployees([request.employeeId], {
+            type: 'leave_request_reviewed',
+            title: `Sick leave ${dto.action}`,
+            body: `Your sick leave (${this.ymd(request.startDate)} to ${this.ymd(request.endDate)}) was ${dto.action}.${dto.reviewNote ? ` Note: ${dto.reviewNote}` : ''}`,
+            data: { kind: 'sick', requestId: request.id, status: dto.action },
+            email: true,
+        });
+        return updated;
     }
 
     async adminMarkSickLeave(dto: AdminMarkSickLeaveDto, adminUserId: number) {
@@ -230,6 +266,12 @@ export class SickLeaveService {
             await this.repo.incrementUsedDays(employee.id, year, 1);
         }
 
+        void this.notifications.notifyEmployees([employee.id], {
+            type: 'leave_marked_by_admin',
+            title: 'Sick leave recorded',
+            body: `Admin marked you on sick leave for ${this.ymd(date)}.`,
+            data: { kind: 'sick', requestId: request.id },
+        });
         return request;
     }
 
