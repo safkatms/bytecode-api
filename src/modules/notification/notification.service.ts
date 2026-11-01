@@ -237,8 +237,13 @@ export class NotificationService {
 
                 // Tickets come back in the same order as messages; drop tokens Expo says are dead
                 const { data: tickets } = (await res.json()) as {
-                    data: { status: string; details?: { error?: string } }[];
+                    data: { status: string; message?: string; details?: { error?: string } }[];
                 };
+                tickets?.forEach((t) => {
+                    if (t.status !== 'ok') {
+                        this.logger.warn(`Expo push rejected: ${t.details?.error ?? 'error'} — ${t.message ?? ''}`);
+                    }
+                });
                 const dead = chunk
                     .filter((_, idx) => tickets?.[idx]?.details?.error === 'DeviceNotRegistered')
                     .map((t) => t.token);
