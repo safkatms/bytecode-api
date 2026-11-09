@@ -53,6 +53,12 @@ export class AttendanceEmployeeController {
         return ApiResponse.ok(await this.attendanceService.getTodayStatus(userId));
     }
 
+    @Get('pending-checkout')
+    @ApiOperation({ summary: 'Days checked in but not checked out (previous days, or today after 19:00 BD time)' })
+    async pendingCheckout(@CurrentUser('id') userId: number) {
+        return ApiResponse.ok(await this.attendanceService.getPendingCheckouts(userId));
+    }
+
     @Get('history')
     @ApiOperation({ summary: 'My attendance history with date range filter' })
     async history(@CurrentUser('id') userId: number, @Query() filter: AttendanceFilterDto) {

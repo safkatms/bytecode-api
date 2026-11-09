@@ -17,6 +17,7 @@ import { DashboardModule } from '@modules/dashboard/dashboard.module';
 import { EmployeeModule } from '@modules/employee/employee.module';
 import { DeviceModule } from '@modules/device/device.module';
 import { OfficeLocationModule } from '@modules/office-location/office-location.module';
+import { SettingsModule } from '@modules/settings/settings.module';
 import { DepartmentModule } from '@modules/department/department.module';
 import { TeamModule } from '@modules/team/team.module';
 import { SickLeaveModule } from '@modules/sick-leave/sick-leave.module';
@@ -48,6 +49,7 @@ import { NotificationModule } from '@modules/notification/notification.module';
     EmployeeModule,
     DeviceModule,
     OfficeLocationModule,
+    SettingsModule,
     DepartmentModule,
     TeamModule,
     SickLeaveModule,

@@ -622,3 +622,14 @@ model PushToken {
   @@index([userId])
   @@map("push_tokens")
 }
+
+// ─── System Settings (admin-managed key/value) ────────────────
+
+model SystemSetting {
+  key        String   @id @db.VarChar(100)
+  value      String
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  updatedBy  Int?     @map("updated_by")
+
+  @@map("system_settings")
+}

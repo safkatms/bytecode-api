@@ -25,6 +25,20 @@ export class AttendanceRepository extends BaseRepository<
         });
     }
 
+    // Checked in but never checked out, on or before `upToDate`, oldest first
+    async findOpenCheckIns(employeeId: number, upToDate: Date) {
+        return this.prisma.attendance.findMany({
+            where: {
+                employeeId,
+                checkInTime: { not: null },
+                checkOutTime: null,
+                attendanceDate: { lte: upToDate },
+                ...this.active,
+            },
+            orderBy: { attendanceDate: 'asc' },
+        });
+    }
+
     async findById(id: number) {
         return this.prisma.attendance.findFirst({
             where: { id, ...this.active },

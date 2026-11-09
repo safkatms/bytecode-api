@@ -20,6 +20,8 @@ export interface MobileContext {
 // Work starts at 10:00 local wall-clock time (stored as-sent) — anything later is "late"
 const WORK_START_HOUR = 10;
 const WORK_START_MINUTE = 0;
+// After this BD hour (19:00), an open check-in for today triggers the checkout prompt
+const CHECKOUT_PROMPT_HOUR = 19;
 
 @Injectable()
 export class AttendanceService {
@@ -213,6 +215,29 @@ export class AttendanceService {
         };
     }
 
+    // Days the employee checked in but never checked out: any previous day,
+    // plus today once BD time is 19:00 or later. The app should prompt for these on open.
+    async getPendingCheckouts(userId: number) {
+        const employee = await this.employeeRepo.findByUserId(userId);
+        if (!employee) throw new NotFoundException('Employee profile');
+
+        const today = this.todayBd();
+        const bdHour = new Date(Date.now() + 6 * 60 * 60 * 1000).getUTCHours();
+        const records = await this.attendanceRepo.findOpenCheckIns(employee.id, today);
+
+        const pending = records.filter(
+            (r) => r.attendanceDate.getTime() < today.getTime() || bdHour >= CHECKOUT_PROMPT_HOUR,
+        );
+        return {
+            hasPending: pending.length > 0,
+            records: pending.map((r) => ({
+                id: r.id,
+                attendanceDate: r.attendanceDate.toISOString().slice(0, 10),
+                checkInTime: r.checkInTime,
+            })),
+        };
+    }
+
     // ─── Admin: Manual mark ───────────────────────────────────────
 
     async adminMark(dto: AdminMarkAttendanceDto, adminId: number) {
@@ -223,14 +248,17 @@ export class AttendanceService {
         const existing = await this.attendanceRepo.findByEmployeeAndDate(employee.id, date);
         if (existing) throw new ConflictException('Attendance already exists for this date. Use update instead.');
 
-        const workHours = this.calcWorkHours(dto.checkInTime, dto.checkOutTime);
+        // attendanceDate is authoritative: times take its calendar date, keeping only the time of day
+        const checkIn = dto.checkInTime ? this.alignToDate(dto.checkInTime, date) : null;
+        const checkOut = dto.checkOutTime ? this.alignToDate(dto.checkOutTime, date) : null;
+        const workHours = this.calcWorkHours(checkIn, checkOut);
 
         const created = await this.attendanceRepo.create({
             employeeId: dto.employeeId,
             attendanceDate: date,
             status: dto.status,
-            checkInTime: dto.checkInTime ? this.parseLocalTime(dto.checkInTime) : null,
-            checkOutTime: dto.checkOutTime ? this.parseLocalTime(dto.checkOutTime) : null,
+            checkInTime: checkIn,
+            checkOutTime: checkOut,
             workHours,
             lateMinutes: dto.lateMinutes ?? 0,
             note: dto.note,
@@ -255,16 +283,21 @@ export class AttendanceService {
         const existing = await this.attendanceRepo.findById(id);
         if (!existing) throw new NotFoundException('Attendance record');
 
-        const workHours = this.calcWorkHours(
-            dto.checkInTime ?? existing.checkInTime,
-            dto.checkOutTime ?? existing.checkOutTime,
-        );
+        // attendanceDate is authoritative; times (new or already stored) follow its calendar date
+        const date = dto.attendanceDate ? new Date(dto.attendanceDate) : existing.attendanceDate;
+        const checkIn = dto.checkInTime
+            ? this.alignToDate(dto.checkInTime, date)
+            : existing.checkInTime ? this.alignToDate(existing.checkInTime, date) : null;
+        const checkOut = dto.checkOutTime
+            ? this.alignToDate(dto.checkOutTime, date)
+            : existing.checkOutTime ? this.alignToDate(existing.checkOutTime, date) : null;
+        const workHours = this.calcWorkHours(checkIn, checkOut);
 
         const updated = await this.attendanceRepo.update(id, {
             ...dto,
-            ...(dto.attendanceDate ? { attendanceDate: new Date(dto.attendanceDate) } : {}),
-            ...(dto.checkInTime ? { checkInTime: this.parseLocalTime(dto.checkInTime) } : {}),
-            ...(dto.checkOutTime ? { checkOutTime: this.parseLocalTime(dto.checkOutTime) } : {}),
+            ...(dto.attendanceDate ? { attendanceDate: date } : {}),
+            ...(checkIn ? { checkInTime: checkIn } : {}),
+            ...(checkOut ? { checkOutTime: checkOut } : {}),
             workHours,
             isManual: true,
             updatedBy: adminId,
@@ -346,10 +379,29 @@ export class AttendanceService {
         return new Date(str.replace(/(Z|[+-]\d{2}:?\d{2})$/, '') + 'Z');
     }
 
+    // Combines the calendar date of `date` with the time-of-day of `time`
+    // (full ISO datetime, "HH:mm[:ss]", or an already-stored Date).
+    private alignToDate(time: string | Date, date: Date): Date {
+        let t: Date;
+        if (time instanceof Date) {
+            t = time;
+        } else if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(time.trim())) {
+            const [h, m, s = '00'] = time.trim().split(':');
+            t = this.parseLocalTime(`1970-01-01T${h.padStart(2, '0')}:${m}:${s}`);
+        } else {
+            t = this.parseLocalTime(time);
+        }
+        if (isNaN(t.getTime())) throw new BadRequestException('Invalid time format');
+        return new Date(Date.UTC(
+            date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(),
+            t.getUTCHours(), t.getUTCMinutes(), t.getUTCSeconds(),
+        ));
+    }
+
     private getWeekRange(anchor: Date): { weekStart: Date; weekEnd: Date } {
-        const day = anchor.getUTCDay();
-        const diffToMon = day === 0 ? -6 : 1 - day;
-        const weekStart = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate() + diffToMon));
+        // Week runs Saturday → Friday
+        const diffToSat = -((anchor.getUTCDay() + 1) % 7);
+        const weekStart = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate() + diffToSat));
         const weekEnd = new Date(Date.UTC(weekStart.getUTCFullYear(), weekStart.getUTCMonth(), weekStart.getUTCDate() + 6));
         return { weekStart, weekEnd };
     }
