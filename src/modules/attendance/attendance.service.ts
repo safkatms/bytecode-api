@@ -17,9 +17,9 @@ export interface MobileContext {
     deviceName: string | null; // X-Device-Name header (optional, e.g. "Samsung Galaxy S24")
 }
 
-// Work starts at 10:00 local wall-clock time (stored as-sent) — anything later is "late"
+// Check-in deadline is 10:30 BD wall-clock time (stored as-sent) — anything later is "late"
 const WORK_START_HOUR = 10;
-const WORK_START_MINUTE = 0;
+const WORK_START_MINUTE = 30;
 // After this BD hour (19:00), an open check-in for today triggers the checkout prompt
 const CHECKOUT_PROMPT_HOUR = 19;
 
@@ -253,14 +253,22 @@ export class AttendanceService {
         const checkOut = dto.checkOutTime ? this.alignToDate(dto.checkOutTime, date) : null;
         const workHours = this.calcWorkHours(checkIn, checkOut);
 
+        // present/late are derived from the check-in time; other statuses (leave, holiday…) are kept as given
+        let status = dto.status;
+        let lateMinutes = dto.lateMinutes ?? 0;
+        if (checkIn && (status === AttendanceStatus.present || status === AttendanceStatus.late)) {
+            lateMinutes = this.calcLateMinutes(checkIn);
+            status = lateMinutes > 0 ? AttendanceStatus.late : AttendanceStatus.present;
+        }
+
         const created = await this.attendanceRepo.create({
             employeeId: dto.employeeId,
             attendanceDate: date,
-            status: dto.status,
+            status,
             checkInTime: checkIn,
             checkOutTime: checkOut,
             workHours,
-            lateMinutes: dto.lateMinutes ?? 0,
+            lateMinutes,
             note: dto.note,
             isManual: true,
             deviceId: null,
@@ -293,8 +301,17 @@ export class AttendanceService {
             : existing.checkOutTime ? this.alignToDate(existing.checkOutTime, date) : null;
         const workHours = this.calcWorkHours(checkIn, checkOut);
 
+        // present/late are derived from the check-in time; other statuses are kept as given
+        const effectiveStatus = dto.status ?? existing.status;
+        const derived: { status?: AttendanceStatus; lateMinutes?: number } = {};
+        if (checkIn && (effectiveStatus === AttendanceStatus.present || effectiveStatus === AttendanceStatus.late)) {
+            derived.lateMinutes = this.calcLateMinutes(checkIn);
+            derived.status = derived.lateMinutes > 0 ? AttendanceStatus.late : AttendanceStatus.present;
+        }
+
         const updated = await this.attendanceRepo.update(id, {
             ...dto,
+            ...derived,
             ...(dto.attendanceDate ? { attendanceDate: date } : {}),
             ...(checkIn ? { checkInTime: checkIn } : {}),
             ...(checkOut ? { checkOutTime: checkOut } : {}),
